@@ -1,0 +1,19 @@
+[
+  {"key": "netflix", "code": "expense.subscriptions"},
+  {"key": "spotify", "code": "expense.subscriptions"},
+  {"key": "continente", "code": "expense.groceries"},
+  {"key": "pingo doce", "code": "expense.groceries"},
+  {"key": "lidl", "code": "expense.groceries"},
+  {"key": "aldi", "code": "expense.groceries"},
+  {"key": "mcdonalds", "code": "expense.restaurants"},
+  {"key": "starbucks", "code": "expense.restaurants"},
+  {"key": "uber eats", "code": "expense.restaurants"},
+  {"key": "uber", "code": "expense.transport"},
+  {"key": "cp comboios", "code": "expense.transport"},
+  {"key": "galp", "code": "expense.fuel"},
+  {"key": "repsol", "code": "expense.fuel"},
+  {"key": "edp", "code": "expense.housing"},
+  {"key": "vodafone", "code": "expense.subscriptions"},
+  {"key": "vencimento", "code": "income.salary"},
+  {"key": "salary", "code": "income.salary"}
+]

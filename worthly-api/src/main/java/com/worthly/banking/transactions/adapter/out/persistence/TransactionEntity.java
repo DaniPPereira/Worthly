@@ -164,11 +164,23 @@ public class TransactionEntity {
         return categoryId;
     }
 
-    public String getNotes() {
-        return notes;
+    public void setCategoryId(UUID categoryId) {
+        this.categoryId = categoryId;
+    }
+
+    public String getCategorizationSource() {
+        return categorizationSource;
     }
 
     public void setCategorizationSource(String categorizationSource) {
         this.categorizationSource = categorizationSource;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
     }
 }

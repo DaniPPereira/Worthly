@@ -20,5 +20,7 @@ public interface TransactionRepository
 
     List<TransactionEntity> findAllByAccountId(UUID accountId);
 
+    List<TransactionEntity> findByAccountIdInAndLifecycleStatus(Collection<UUID> accountIds, String lifecycleStatus);
+
     long countByAccountId(UUID accountId);
 }

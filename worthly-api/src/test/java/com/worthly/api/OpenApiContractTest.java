@@ -12,7 +12,7 @@ class OpenApiContractTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void openApiParsesAndExposesPhase0AndPhase1Operations() throws Exception {
+    void openApiParsesAndExposesPhase0ToPhase3Operations() throws Exception {
         Path spec = Path.of("..", "api", "openapi.yaml");
         assertThat(spec).exists();
         Map<String, Object> root = new Yaml().load(Files.readString(spec));
@@ -31,6 +31,11 @@ class OpenApiContractTest {
                 "/connections/enable-banking/callback",
                 "/accounts",
                 "/transactions",
+                "/categories",
+                "/categorization-rules",
+                "/transfer-matches",
+                "/analytics/summary",
+                "/analytics/monthly",
                 "/notifications",
                 "/exports/transactions.csv");
         Map<String, Object> me = (Map<String, Object>) paths.get("/me");

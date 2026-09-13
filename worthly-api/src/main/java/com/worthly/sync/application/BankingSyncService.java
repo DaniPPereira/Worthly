@@ -20,8 +20,10 @@ import com.worthly.infrastructure.crypto.PayloadCrypto;
 import com.worthly.infrastructure.security.TokenHashes;
 import com.worthly.notifications.application.NotificationService;
 import com.worthly.shared.web.ApiException;
+import com.worthly.categories.application.CategorizationService;
 import com.worthly.sync.adapter.out.persistence.SyncRunEntity;
 import com.worthly.sync.adapter.out.persistence.SyncRunRepository;
+import com.worthly.transfers.application.TransferMatchingService;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
@@ -56,6 +58,8 @@ public class BankingSyncService {
     private final NotificationService notificationService;
     private final ConnectionLock connectionLock;
     private final TransactionTemplate transactionTemplate;
+    private final CategorizationService categorization;
+    private final TransferMatchingService transferMatching;
     private final WorthlyProperties.EnableBanking properties;
 
     public BankingSyncService(
@@ -72,6 +76,8 @@ public class BankingSyncService {
             NotificationService notificationService,
             ConnectionLock connectionLock,
             PlatformTransactionManager transactionManager,
+            CategorizationService categorization,
+            TransferMatchingService transferMatching,
             WorthlyProperties properties) {
         this.connectionService = connectionService;
         this.gateway = gateway;
@@ -86,6 +92,8 @@ public class BankingSyncService {
         this.notificationService = notificationService;
         this.connectionLock = connectionLock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.categorization = categorization;
+        this.transferMatching = transferMatching;
         this.properties = properties.getEnableBanking();
     }
 
@@ -165,6 +173,7 @@ public class BankingSyncService {
             connection.setLastErrorCode(null);
             connections.save(connection);
             syncRuns.save(run);
+            transferMatching.recalculate(userId);
             auditService.record(
                     userId,
                     "SYNC_SUCCEEDED",
@@ -278,6 +287,7 @@ public class BankingSyncService {
                         normalized.setDescription(tx.description());
                         normalized.setMerchant(tx.counterparty());
                         normalized.setReportingAt(bookedAt);
+                        categorization.applyAutomatic(account.getUserId(), normalized);
                         transactions.save(normalized);
                     });
             return 2;
@@ -312,6 +322,7 @@ public class BankingSyncService {
         normalized.setDescription(tx.description());
         normalized.setReportingAt(bookedAt);
         normalized.setCategorizationSource("UNCATEGORIZED");
+        categorization.applyAutomatic(account.getUserId(), normalized);
         transactions.save(normalized);
         return 1;
     }

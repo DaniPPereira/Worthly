@@ -4,9 +4,9 @@ import com.worthly.banking.accounts.adapter.out.persistence.BalanceSnapshotEntit
 import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountEntity;
 import com.worthly.banking.application.BankingMappings;
 import com.worthly.banking.application.BankingQueryService;
+import com.worthly.banking.application.LiquidCashSelector;
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -38,32 +38,10 @@ public class AccountController {
         UUID userId = UUID.fromString(jwt.getSubject());
         FinancialAccountEntity account = queryService.requireAccount(userId, accountId);
         List<BalanceSnapshotEntity> snapshots = queryService.listBalances(userId, accountId);
-        String selected = selectLiquidBalanceType(account, snapshots);
+        String selected = LiquidCashSelector.selectedType(account, snapshots);
         return snapshots.stream()
                 .map(snapshot -> BalanceResponse.from(snapshot, snapshot.getBalanceType().equals(selected)))
                 .toList();
-    }
-
-    private static String selectLiquidBalanceType(
-            FinancialAccountEntity account, List<BalanceSnapshotEntity> snapshots) {
-        if (account == null || !BankingMappings.includedInLiquidCash(account.getType()) || snapshots.isEmpty()) {
-            return null;
-        }
-        return snapshots.stream()
-                .min(Comparator.comparingInt(AccountController::liquidRank)
-                        .thenComparing(BalanceSnapshotEntity::getObservedAt, Comparator.reverseOrder()))
-                .map(BalanceSnapshotEntity::getBalanceType)
-                .orElse(null);
-    }
-
-    private static int liquidRank(BalanceSnapshotEntity snapshot) {
-        if (BankingMappings.isPreferredLiquidBalance(snapshot.getBalanceType())) {
-            return 0;
-        }
-        if (BankingMappings.isBookedLiquidBalance(snapshot.getBalanceType())) {
-            return 1;
-        }
-        return 9;
     }
 
     public record AccountResponse(

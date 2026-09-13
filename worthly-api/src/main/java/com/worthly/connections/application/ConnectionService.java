@@ -6,6 +6,7 @@ import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountEnti
 import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountRepository;
 import com.worthly.banking.application.BankingMappings;
 import com.worthly.banking.transactions.adapter.out.persistence.ExternalTransactionRepository;
+import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntity;
 import com.worthly.banking.transactions.adapter.out.persistence.TransactionRepository;
 import com.worthly.connections.adapter.out.persistence.AuthorizationAttemptEntity;
 import com.worthly.connections.adapter.out.persistence.AuthorizationAttemptRepository;
@@ -15,6 +16,7 @@ import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.infrastructure.crypto.PayloadCrypto;
 import com.worthly.infrastructure.security.TokenHashes;
 import com.worthly.shared.web.ApiException;
+import com.worthly.transfers.adapter.out.persistence.TransferMatchRepository;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
@@ -38,6 +40,7 @@ public class ConnectionService {
     private final BalanceSnapshotRepository balances;
     private final ExternalTransactionRepository externalTransactions;
     private final TransactionRepository transactions;
+    private final TransferMatchRepository transferMatches;
     private final PayloadCrypto payloadCrypto;
     private final AuditService auditService;
     private final WorthlyProperties.EnableBanking properties;
@@ -52,6 +55,7 @@ public class ConnectionService {
             BalanceSnapshotRepository balances,
             ExternalTransactionRepository externalTransactions,
             TransactionRepository transactions,
+            TransferMatchRepository transferMatches,
             PayloadCrypto payloadCrypto,
             AuditService auditService,
             WorthlyProperties properties) {
@@ -63,6 +67,7 @@ public class ConnectionService {
         this.balances = balances;
         this.externalTransactions = externalTransactions;
         this.transactions = transactions;
+        this.transferMatches = transferMatches;
         this.payloadCrypto = payloadCrypto;
         this.auditService = auditService;
         this.properties = properties.getEnableBanking();
@@ -198,6 +203,13 @@ public class ConnectionService {
         }
         ProviderConnectionEntity connection = requireOwned(userId, connectionId);
         List<FinancialAccountEntity> owned = accounts.findByConnectionId(connection.getId());
+        List<UUID> transactionIds = owned.stream()
+                .flatMap(account -> transactions.findAllByAccountId(account.getId()).stream())
+                .map(TransactionEntity::getId)
+                .toList();
+        if (!transactionIds.isEmpty()) {
+            transferMatches.deleteByTransactionIds(transactionIds);
+        }
         for (FinancialAccountEntity account : owned) {
             transactions.deleteAll(transactions.findAllByAccountId(account.getId()));
             externalTransactions.deleteAll(externalTransactions.findAllByAccountId(account.getId()));
