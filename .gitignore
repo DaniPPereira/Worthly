@@ -1,0 +1,54 @@
+# Secrets and local env
+.env
+*.pem
+*.p12
+*.jks
+**/secrets/**
+!**/secrets/examples/
+!**/secrets/examples/**
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Java
+**/build/
+**/.gradle/
+**/out/
+*.class
+*.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+*.war
+hs_err_pid*
+
+# Node
+**/node_modules/
+**/.next/
+**/out/
+**/.turbo/
+npm-debug.log*
+
+# Flutter
+worthly-mobile/.dart_tool/
+worthly-mobile/.flutter-plugins
+worthly-mobile/.flutter-plugins-dependencies
+worthly-mobile/.packages
+worthly-mobile/build/
+worthly-mobile/.pub-cache/
+worthly-mobile/.pub/
+**/*.iml
+
+# Test / coverage
+**/coverage/
+**/.nyc_output/
+
+# Docker volumes
+infrastructure/data/
+
+# Logs
+*.log
+logs/

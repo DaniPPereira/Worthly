@@ -1,0 +1,852 @@
+openapi: 3.1.0
+info:
+  title: Worthly API
+  version: 4.1.0
+  description: |
+    Canonical MVP API contract for Worthly.
+
+    Protected resources are Bearer-token OAuth2 Resource Server endpoints.
+    The Next.js `web_session` cookie is never an API credential.
+
+    Aggregate amounts are always grouped by ISO 4217 currency. No schema
+    exposes a single cross-currency Money total.
+servers:
+  - url: https://worthly.example.com/api/v1
+security:
+  - oauth2: [worthly.read]
+tags:
+  - {name: Identity}
+  - {name: Devices}
+  - {name: Connections}
+  - {name: Accounts}
+  - {name: Transactions}
+  - {name: Categories}
+  - {name: Transfers}
+  - {name: Investments}
+  - {name: Analytics}
+  - {name: Notifications}
+  - {name: Exports}
+paths:
+  /me:
+    get:
+      tags: [Identity]
+      operationId: getMe
+      responses:
+        '200':
+          description: Current owner
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Owner'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    patch:
+      tags: [Identity]
+      operationId: updateMe
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/OwnerPatch'}
+      responses:
+        '200':
+          description: Updated owner preferences
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Owner'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/logout:
+    post:
+      tags: [Identity]
+      operationId: logoutCurrent
+      description: |
+        Revokes the current access token's refresh-token family and any
+        associated web or device session. The BFF MUST also clear the
+        `web_session` cookie. Mobile MUST delete secure-storage material.
+      responses:
+        '204': {description: Logged out}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /devices:
+    get:
+      tags: [Devices]
+      operationId: listDevices
+      responses:
+        '200':
+          description: Active/recent device sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Device'}
+  /devices/{deviceId}:
+    delete:
+      tags: [Devices]
+      operationId: revokeDevice
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/DeviceId'}
+      responses:
+        '204': {description: Revoked}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /connections:
+    get:
+      tags: [Connections]
+      operationId: listConnections
+      responses:
+        '200':
+          description: Connections
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Connection'}
+  /connections/banks:
+    get:
+      tags: [Connections]
+      operationId: listAvailableBanks
+      parameters:
+        - name: country
+          in: query
+          schema: {type: string, default: PT, minLength: 2, maxLength: 2}
+      responses:
+        '200':
+          description: Dynamically discovered AIS banks
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/BankChoice'}
+  /connections/enable-banking/authorize:
+    post:
+      tags: [Connections]
+      operationId: startEnableBankingAuthorization
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/BankAuthorizationRequest'}
+      responses:
+        '200':
+          description: Authorization redirect
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthorizationRedirect'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /connections/enable-banking/callback:
+    get:
+      tags: [Connections]
+      operationId: enableBankingCallback
+      security: []
+      parameters:
+        - {name: code, in: query, schema: {type: string}}
+        - {name: state, in: query, required: true, schema: {type: string}}
+        - {name: error, in: query, schema: {type: string}}
+        - {name: error_description, in: query, schema: {type: string}}
+      responses:
+        '302':
+          description: Redirect to allowlisted Worthly client result page
+        '400': {$ref: '#/components/responses/BadRequest'}
+  /connections/{connectionId}/sync:
+    post:
+      tags: [Connections]
+      operationId: requestSync
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/ConnectionId'}
+      responses:
+        '202':
+          description: Sync accepted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncRun'}
+        '409':
+          description: Sync already running
+          content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+  /connections/{connectionId}/sync-runs:
+    get:
+      tags: [Connections]
+      operationId: listSyncRuns
+      parameters:
+        - {$ref: '#/components/parameters/ConnectionId'}
+        - {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+        - {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+      responses:
+        '200':
+          description: Sync runs newest first
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SyncRunPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /connections/{connectionId}:
+    delete:
+      tags: [Connections]
+      operationId: disconnect
+      description: |
+        Sets status DISABLED and stops synchronization. Historical
+        normalized data is retained until purge.
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/ConnectionId'}
+      responses:
+        '204': {description: Disconnected}
+  /connections/{connectionId}/purge:
+    post:
+      tags: [Connections]
+      operationId: purgeConnectionData
+      description: |
+        Deletes imported provider data for this connection after explicit
+        confirmation. Audit events are retained. See domain data lifecycle.
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/ConnectionId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PurgeRequest'}
+      responses:
+        '204': {description: Purged}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /accounts:
+    get:
+      tags: [Accounts]
+      operationId: listAccounts
+      responses:
+        '200':
+          description: Accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Account'}
+  /accounts/{accountId}/balances:
+    get:
+      tags: [Accounts]
+      operationId: getAccountBalances
+      parameters:
+        - {$ref: '#/components/parameters/AccountId'}
+      responses:
+        '200':
+          description: Balance snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Balance'}
+  /transactions:
+    get:
+      tags: [Transactions]
+      operationId: listTransactions
+      parameters:
+        - {$ref: '#/components/parameters/FromDate'}
+        - {$ref: '#/components/parameters/ToDate'}
+        - {$ref: '#/components/parameters/AccountIdQuery'}
+        - {$ref: '#/components/parameters/CategoryIdQuery'}
+        - {$ref: '#/components/parameters/EconomicTypeQuery'}
+        - {$ref: '#/components/parameters/DirectionQuery'}
+        - {$ref: '#/components/parameters/LifecycleStatusQuery'}
+        - {$ref: '#/components/parameters/MinAmountQuery'}
+        - {$ref: '#/components/parameters/MaxAmountQuery'}
+        - {$ref: '#/components/parameters/TextQuery'}
+        - {$ref: '#/components/parameters/PageQuery'}
+        - {$ref: '#/components/parameters/SizeQuery'}
+      responses:
+        '200':
+          description: Transaction page
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransactionPage'}
+  /transactions/{transactionId}:
+    patch:
+      tags: [Transactions]
+      operationId: updateTransaction
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/TransactionId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TransactionPatch'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Transaction'}
+  /categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      responses:
+        '200':
+          description: Categories
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Category'}}
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategoryCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Category'}
+  /categorization-rules:
+    get:
+      tags: [Categories]
+      operationId: listRules
+      responses:
+        '200':
+          description: Rules
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/CategorizationRule'}}
+    post:
+      tags: [Categories]
+      operationId: createRule
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategorizationRuleCreate'}
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategorizationRule'}
+  /categorization-rules/{ruleId}:
+    patch:
+      tags: [Categories]
+      operationId: updateRule
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/RuleId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategorizationRulePatch'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CategorizationRule'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Categories]
+      operationId: deleteRule
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/RuleId'}
+      responses:
+        '204': {description: Deleted}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /transfer-matches:
+    get:
+      tags: [Transfers]
+      operationId: listTransferMatches
+      parameters:
+        - name: status
+          in: query
+          schema: {$ref: '#/components/schemas/TransferMatchStatus'}
+      responses:
+        '200':
+          description: Transfer matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/TransferMatch'}
+    post:
+      tags: [Transfers]
+      operationId: createTransferMatch
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TransferMatchRequest'}
+      responses:
+        '201':
+          description: Linked
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/TransferMatch'}
+  /transfer-matches/{matchId}:
+    delete:
+      tags: [Transfers]
+      operationId: deleteTransferMatch
+      description: Unlinks an automatic/manual match or rejects a suggestion. Same pair fingerprint is suppressed after reject.
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {name: matchId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Unlinked or rejected}
+  /investments/summary:
+    get:
+      tags: [Investments]
+      operationId: getInvestmentSummary
+      responses:
+        '200':
+          description: Investment summary grouped by currency
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/InvestmentSummary'}
+  /investments/positions:
+    get:
+      tags: [Investments]
+      operationId: listPositions
+      responses:
+        '200':
+          description: Positions
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Position'}}
+  /analytics/summary:
+    get:
+      tags: [Analytics]
+      operationId: getWealthSummary
+      responses:
+        '200':
+          description: Cash, investments and net worth grouped by currency
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/WealthSummary'}
+  /analytics/monthly:
+    get:
+      tags: [Analytics]
+      operationId: getMonthlyAnalytics
+      parameters:
+        - {name: month, in: query, required: true, schema: {type: string, pattern: '^\\d{4}-\\d{2}$'}}
+      responses:
+        '200':
+          description: Monthly analytics grouped by currency
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/MonthlyAnalytics'}
+  /notifications:
+    get:
+      tags: [Notifications]
+      operationId: listNotifications
+      responses:
+        '200':
+          description: Notifications
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Notification'}}
+  /notifications/{notificationId}/read:
+    post:
+      tags: [Notifications]
+      operationId: markNotificationRead
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {name: notificationId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '204': {description: Marked read}
+  /exports/transactions.csv:
+    get:
+      tags: [Exports]
+      operationId: exportTransactionsCsv
+      description: |
+        CSV of normalized transactions. Same filters as GET /transactions.
+        Header row, UTF-8, comma-separated:
+
+        id,accountId,reportingAt,direction,lifecycleStatus,economicType,
+        amount,currency,merchant,description,categoryCode,categoryLabel,
+        notes,transferMatchId
+      parameters:
+        - {$ref: '#/components/parameters/FromDate'}
+        - {$ref: '#/components/parameters/ToDate'}
+        - {$ref: '#/components/parameters/AccountIdQuery'}
+        - {$ref: '#/components/parameters/CategoryIdQuery'}
+        - {$ref: '#/components/parameters/EconomicTypeQuery'}
+        - {$ref: '#/components/parameters/DirectionQuery'}
+        - {$ref: '#/components/parameters/LifecycleStatusQuery'}
+        - {$ref: '#/components/parameters/MinAmountQuery'}
+        - {$ref: '#/components/parameters/MaxAmountQuery'}
+        - {$ref: '#/components/parameters/TextQuery'}
+      responses:
+        '200':
+          description: CSV export
+          content:
+            text/csv:
+              schema: {type: string}
+components:
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://worthly.example.com/oauth2/authorize
+          tokenUrl: https://worthly.example.com/oauth2/token
+          refreshUrl: https://worthly.example.com/oauth2/token
+          scopes:
+            openid: OpenID identity
+            profile: Basic owner profile
+            worthly.read: Read Worthly financial data
+            worthly.write: Modify Worthly metadata/settings
+  parameters:
+    DeviceId: {name: deviceId, in: path, required: true, schema: {type: string, format: uuid}}
+    ConnectionId: {name: connectionId, in: path, required: true, schema: {type: string, format: uuid}}
+    AccountId: {name: accountId, in: path, required: true, schema: {type: string, format: uuid}}
+    TransactionId: {name: transactionId, in: path, required: true, schema: {type: string, format: uuid}}
+    RuleId: {name: ruleId, in: path, required: true, schema: {type: string, format: uuid}}
+    FromDate: {name: from, in: query, schema: {type: string, format: date}}
+    ToDate: {name: to, in: query, schema: {type: string, format: date}}
+    AccountIdQuery: {name: accountId, in: query, schema: {type: string, format: uuid}}
+    CategoryIdQuery: {name: categoryId, in: query, schema: {type: string, format: uuid}}
+    EconomicTypeQuery: {name: economicType, in: query, schema: {$ref: '#/components/schemas/EconomicType'}}
+    DirectionQuery: {name: direction, in: query, schema: {type: string, enum: [CREDIT, DEBIT]}}
+    LifecycleStatusQuery: {name: status, in: query, schema: {type: string, enum: [PENDING, BOOKED, REVERSED, UNKNOWN]}}
+    MinAmountQuery:
+      name: minAmount
+      in: query
+      description: Minimum absolute amount in the transaction original currency; no FX conversion.
+      schema: {type: string, pattern: '^\\d+(\\.\\d+)?$'}
+    MaxAmountQuery:
+      name: maxAmount
+      in: query
+      description: Maximum absolute amount in the transaction original currency; no FX conversion.
+      schema: {type: string, pattern: '^\\d+(\\.\\d+)?$'}
+    TextQuery: {name: q, in: query, schema: {type: string, maxLength: 200}}
+    PageQuery: {name: page, in: query, schema: {type: integer, minimum: 0, default: 0}}
+    SizeQuery: {name: size, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    NotFound:
+      description: Not found
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    BadRequest:
+      description: Bad request
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+  schemas:
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        currency: {type: string, minLength: 3, maxLength: 3, pattern: '^[A-Z]{3}$'}
+    AccountType:
+      type: string
+      enum: [CURRENT, SAVINGS, CARD, BROKERAGE, OTHER]
+    Owner:
+      type: object
+      required: [id, email, reportingTimezone, reportingCurrency]
+      properties:
+        id: {type: string, format: uuid}
+        email: {type: string, format: email}
+        reportingTimezone: {type: string, example: Europe/Lisbon}
+        reportingCurrency: {type: string, example: EUR}
+    OwnerPatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        reportingTimezone:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: IANA timezone identifier validated by the server, e.g. Europe/Lisbon.
+        reportingCurrency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 reporting currency preference. Does not imply FX conversion.
+    Device:
+      type: object
+      required: [id, platform, createdAt, revoked]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        platform: {type: string, enum: [WEB, ANDROID, IOS]}
+        createdAt: {type: string, format: date-time}
+        lastSeenAt: {type: string, format: date-time}
+        revoked: {type: boolean}
+    ConnectionStatus:
+      type: string
+      enum: [ACTIVE, REAUTH_REQUIRED, CONFIGURATION_REQUIRED, ERROR, DISABLED]
+    Connection:
+      type: object
+      required: [id, provider, status]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string, enum: [ENABLE_BANKING, TRADING_212]}
+        status: {$ref: '#/components/schemas/ConnectionStatus'}
+        institutionName: {type: string}
+        institutionCountry: {type: string}
+        lastSuccessfulSyncAt: {type: string, format: date-time}
+        consentExpiresAt: {type: string, format: date-time}
+    BankChoice:
+      type: object
+      required: [name, country]
+      properties:
+        name: {type: string}
+        country: {type: string}
+        logoUrl: {type: string, format: uri}
+    BankAuthorizationRequest:
+      type: object
+      required: [name, country, returnClient]
+      properties:
+        name: {type: string}
+        country: {type: string, minLength: 2, maxLength: 2}
+        returnClient: {type: string, enum: [WEB, MOBILE]}
+    AuthorizationRedirect:
+      type: object
+      required: [url, expiresAt]
+      properties:
+        url: {type: string, format: uri}
+        expiresAt: {type: string, format: date-time}
+    PurgeRequest:
+      type: object
+      required: [confirm]
+      properties:
+        confirm:
+          type: boolean
+          description: Must be true. False or omitted is 400.
+    Account:
+      type: object
+      required: [id, provider, displayName, currency, type, active, includedInLiquidCash, includedInNetWorth]
+      properties:
+        id: {type: string, format: uuid}
+        provider: {type: string}
+        displayName: {type: string}
+        type: {$ref: '#/components/schemas/AccountType'}
+        currency: {type: string}
+        maskedIdentifier: {type: string}
+        active: {type: boolean}
+        includedInLiquidCash: {type: boolean}
+        includedInNetWorth: {type: boolean}
+    Balance:
+      type: object
+      required: [type, money, observedAt]
+      properties:
+        type: {type: string}
+        money: {$ref: '#/components/schemas/Money'}
+        observedAt: {type: string, format: date-time}
+        usedForLiquidCash: {type: boolean}
+    EconomicType:
+      type: string
+      enum: [INCOME, EXPENSE, INTERNAL_TRANSFER, INVESTMENT_FUNDING, INVESTMENT_WITHDRAWAL, REFUND, FEE, OTHER]
+    Transaction:
+      type: object
+      required: [id, accountId, direction, lifecycleStatus, economicType, money, reportingAt]
+      properties:
+        id: {type: string, format: uuid}
+        accountId: {type: string, format: uuid}
+        direction: {type: string, enum: [CREDIT, DEBIT]}
+        lifecycleStatus: {type: string, enum: [PENDING, BOOKED, REVERSED, UNKNOWN]}
+        economicType: {$ref: '#/components/schemas/EconomicType'}
+        money: {$ref: '#/components/schemas/Money'}
+        merchant: {type: string}
+        description: {type: string}
+        reportingAt: {type: string, format: date-time}
+        categoryId: {type: string, format: uuid}
+        notes: {type: string, maxLength: 1000}
+        transferMatchId: {type: [string, 'null'], format: uuid}
+    TransactionPage:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Transaction'}}
+        page: {type: integer}
+        size: {type: integer}
+        total: {type: integer, format: int64}
+    TransactionPatch:
+      type: object
+      properties:
+        categoryId: {type: [string, 'null'], format: uuid}
+        notes: {type: [string, 'null'], maxLength: 1000}
+    Category:
+      type: object
+      required: [id, label, system]
+      properties:
+        id: {type: string, format: uuid}
+        code: {type: string}
+        label: {type: string}
+        parentId: {type: [string, 'null'], format: uuid}
+        system: {type: boolean}
+    CategoryCreate:
+      type: object
+      required: [label]
+      properties:
+        label: {type: string, minLength: 1, maxLength: 80}
+        parentId: {type: [string, 'null'], format: uuid}
+    RuleField:
+      type: string
+      enum: [MERCHANT, DESCRIPTION, ACCOUNT_ID, DIRECTION]
+    RuleOperator:
+      type: string
+      enum: [EQUALS, CONTAINS, STARTS_WITH]
+    CategorizationRule:
+      type: object
+      required: [id, priority, field, operator, matchValue, targetCategoryId, enabled]
+      properties:
+        id: {type: string, format: uuid}
+        priority: {type: integer, minimum: 0}
+        field: {$ref: '#/components/schemas/RuleField'}
+        operator: {$ref: '#/components/schemas/RuleOperator'}
+        matchValue: {type: string, minLength: 1, maxLength: 200}
+        amountMin: {type: [string, 'null']}
+        amountMax: {type: [string, 'null']}
+        targetCategoryId: {type: string, format: uuid}
+        enabled: {type: boolean}
+    CategorizationRuleCreate:
+      type: object
+      required: [priority, field, operator, matchValue, targetCategoryId]
+      additionalProperties: false
+      properties:
+        priority: {type: integer, minimum: 0}
+        field: {$ref: '#/components/schemas/RuleField'}
+        operator: {$ref: '#/components/schemas/RuleOperator'}
+        matchValue: {type: string, minLength: 1, maxLength: 200}
+        amountMin: {type: [string, 'null']}
+        amountMax: {type: [string, 'null']}
+        targetCategoryId: {type: string, format: uuid}
+        enabled: {type: boolean, default: true}
+    CategorizationRulePatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        priority: {type: integer, minimum: 0}
+        field: {$ref: '#/components/schemas/RuleField'}
+        operator: {$ref: '#/components/schemas/RuleOperator'}
+        matchValue: {type: string, minLength: 1, maxLength: 200}
+        amountMin: {type: [string, 'null']}
+        amountMax: {type: [string, 'null']}
+        targetCategoryId: {type: string, format: uuid}
+        enabled: {type: boolean}
+    TransferMatchStatus:
+      type: string
+      enum: [LINKED, SUGGESTED, REJECTED]
+    TransferMatch:
+      type: object
+      required: [id, leftTransactionId, rightTransactionId, confidence, method, status]
+      properties:
+        id: {type: string, format: uuid}
+        leftTransactionId: {type: string, format: uuid}
+        rightTransactionId: {type: string, format: uuid}
+        confidence: {type: integer, minimum: 0, maximum: 100}
+        method: {type: string, enum: [AUTO, MANUAL]}
+        status: {$ref: '#/components/schemas/TransferMatchStatus'}
+    TransferMatchRequest:
+      type: object
+      required: [leftTransactionId, rightTransactionId]
+      properties:
+        leftTransactionId: {type: string, format: uuid}
+        rightTransactionId: {type: string, format: uuid}
+    InvestmentCurrencySummary:
+      type: object
+      required: [currency, cash, portfolioValue]
+      properties:
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        cash: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        portfolioValue: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+    InvestmentSummary:
+      type: object
+      required: [totalsByCurrency, observedAt]
+      properties:
+        totalsByCurrency:
+          type: array
+          items: {$ref: '#/components/schemas/InvestmentCurrencySummary'}
+        observedAt: {type: string, format: date-time}
+    Position:
+      type: object
+      properties:
+        instrumentKey: {type: string}
+        ticker: {type: string}
+        quantity: {type: string}
+        marketValue: {$ref: '#/components/schemas/Money'}
+        observedAt: {type: string, format: date-time}
+    WealthCurrencySummary:
+      type: object
+      required: [currency, liquidCash, investmentValue, netWorth]
+      properties:
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        liquidCash: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        investmentValue: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        netWorth: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+    WealthSummary:
+      type: object
+      required: [asOf, timezone, totalsByCurrency]
+      properties:
+        asOf: {type: string, format: date-time}
+        timezone: {type: string}
+        totalsByCurrency:
+          type: array
+          items: {$ref: '#/components/schemas/WealthCurrencySummary'}
+    MonthlyCurrencyAnalytics:
+      type: object
+      required: [currency, income, expenses, invested, savings, savingsRate]
+      properties:
+        currency: {type: string, pattern: '^[A-Z]{3}$'}
+        income: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        expenses: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        invested: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        savings: {type: string, pattern: '^-?\\d+(\\.\\d+)?$'}
+        savingsRate: {type: [string, 'null'], pattern: '^-?\\d+(\\.\\d+)?$'}
+        savingsRateReason: {type: [string, 'null']}
+    MonthlyAnalytics:
+      type: object
+      required: [month, timezone, totalsByCurrency]
+      properties:
+        month: {type: string, pattern: '^\\d{4}-\\d{2}$'}
+        timezone: {type: string}
+        totalsByCurrency:
+          type: array
+          items: {$ref: '#/components/schemas/MonthlyCurrencyAnalytics'}
+    NotificationType:
+      type: string
+      enum: [CONNECTION_REAUTH_REQUIRED, SYNC_REPEATED_FAILURE, NET_WORTH_MILESTONE, SPENDING_INSIGHT, CONFIGURATION_REQUIRED]
+    Notification:
+      type: object
+      required: [id, type, createdAt]
+      properties:
+        id: {type: string, format: uuid}
+        type: {$ref: '#/components/schemas/NotificationType'}
+        createdAt: {type: string, format: date-time}
+        readAt: {type: [string, 'null'], format: date-time}
+    SyncRun:
+      type: object
+      required: [id, status, startedAt]
+      properties:
+        id: {type: string, format: uuid}
+        status: {type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED, RATE_LIMITED]}
+        startedAt: {type: string, format: date-time}
+        finishedAt: {type: string, format: date-time}
+        importedCount: {type: integer}
+        updatedCount: {type: integer}
+        nextRetryAt: {type: string, format: date-time}
+        errorCode: {type: string}
+    SyncRunPage:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SyncRun'}}
+        page: {type: integer}
+        size: {type: integer}
+        total: {type: integer, format: int64}
+    Problem:
+      type: object
+      required: [type, title, status]
+      properties:
+        type: {type: string, format: uri-reference}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        instance: {type: string, format: uri-reference}
+        correlationId: {type: string}
