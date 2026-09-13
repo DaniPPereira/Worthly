@@ -8,11 +8,15 @@ import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntit
 import com.worthly.banking.transactions.adapter.out.persistence.TransactionRepository;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionEntity;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionRepository;
+import com.worthly.identity.application.OwnerService;
+import com.worthly.identity.domain.Owner;
 import com.worthly.shared.web.ApiException;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,16 +28,19 @@ public class BankingQueryService {
     private final BalanceSnapshotRepository balances;
     private final TransactionRepository transactions;
     private final ProviderConnectionRepository connections;
+    private final OwnerService ownerService;
 
     public BankingQueryService(
             FinancialAccountRepository accounts,
             BalanceSnapshotRepository balances,
             TransactionRepository transactions,
-            ProviderConnectionRepository connections) {
+            ProviderConnectionRepository connections,
+            OwnerService ownerService) {
         this.accounts = accounts;
         this.balances = balances;
         this.transactions = transactions;
         this.connections = connections;
+        this.ownerService = ownerService;
     }
 
     @Transactional(readOnly = true)
@@ -54,20 +61,24 @@ public class BankingQueryService {
     }
 
     @Transactional(readOnly = true)
-    public Page<TransactionEntity> listTransactions(UUID userId, UUID accountId, Pageable pageable) {
-        if (accountId != null) {
-            FinancialAccountEntity account = accounts
-                    .findByIdAndUserId(accountId, userId)
-                    .orElseThrow(() -> ApiException.of(HttpStatus.NOT_FOUND, "not_found"));
-            return transactions.findByAccountId(account.getId(), pageable);
-        }
-        List<UUID> ids = accounts.findByUserIdOrderByDisplayNameAsc(userId).stream()
-                .map(FinancialAccountEntity::getId)
-                .toList();
-        if (ids.isEmpty()) {
+    public Page<TransactionEntity> listTransactions(UUID userId, TransactionQuery query, Pageable pageable) {
+        List<UUID> accountIds = accountIds(userId, query.accountId());
+        if (accountIds.isEmpty()) {
             return Page.empty(pageable);
         }
-        return transactions.findByAccountIdIn(ids, pageable);
+        ZoneId zone = zoneOf(userId);
+        return transactions.findAll(TransactionSpecifications.filter(accountIds, query, zone), pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public List<TransactionEntity> listTransactionsForExport(UUID userId, TransactionQuery query) {
+        List<UUID> accountIds = accountIds(userId, query.accountId());
+        if (accountIds.isEmpty()) {
+            return List.of();
+        }
+        return transactions.findAll(
+                TransactionSpecifications.filter(accountIds, query, zoneOf(userId)),
+                Sort.by("reportingAt").descending());
     }
 
     public String providerOf(FinancialAccountEntity account) {
@@ -75,5 +86,19 @@ public class BankingQueryService {
                 .findById(account.getConnectionId())
                 .map(ProviderConnectionEntity::getProvider)
                 .orElse("ENABLE_BANKING");
+    }
+
+    private List<UUID> accountIds(UUID userId, UUID accountId) {
+        if (accountId != null) {
+            return List.of(requireAccount(userId, accountId).getId());
+        }
+        return accounts.findByUserIdOrderByDisplayNameAsc(userId).stream()
+                .map(FinancialAccountEntity::getId)
+                .toList();
+    }
+
+    private ZoneId zoneOf(UUID userId) {
+        Owner owner = ownerService.require(userId);
+        return ZoneId.of(owner.reportingTimezone());
     }
 }

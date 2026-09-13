@@ -1,9 +1,11 @@
 package com.worthly.banking.transactions.adapter.in.web;
 
 import com.worthly.banking.application.BankingQueryService;
+import com.worthly.banking.application.TransactionQuery;
 import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntity;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -30,12 +32,23 @@ public class TransactionController {
     public TransactionPageResponse list(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) UUID accountId,
+            @RequestParam(required = false) LocalDate from,
+            @RequestParam(required = false) LocalDate to,
+            @RequestParam(required = false) UUID categoryId,
+            @RequestParam(required = false) String economicType,
+            @RequestParam(required = false) String direction,
+            @RequestParam(name = "status", required = false) String lifecycleStatus,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(name = "q", required = false) String text,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        int bounded = Math.min(Math.max(size, 1), 50);
+            @RequestParam(defaultValue = "50") int size) {
+        int bounded = Math.min(Math.max(size, 1), 200);
+        TransactionQuery query = new TransactionQuery(
+                accountId, from, to, categoryId, economicType, direction, lifecycleStatus, minAmount, maxAmount, text);
         Page<TransactionEntity> result = queryService.listTransactions(
                 UUID.fromString(jwt.getSubject()),
-                accountId,
+                query,
                 PageRequest.of(Math.max(page, 0), bounded, Sort.by("reportingAt").descending()));
         return new TransactionPageResponse(
                 result.getContent().stream().map(TransactionResponse::from).toList(),

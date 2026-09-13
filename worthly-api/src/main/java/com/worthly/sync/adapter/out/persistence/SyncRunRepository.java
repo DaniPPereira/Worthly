@@ -1,5 +1,6 @@
 package com.worthly.sync.adapter.out.persistence;
 
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,4 +11,6 @@ public interface SyncRunRepository extends JpaRepository<SyncRunEntity, UUID> {
     Page<SyncRunEntity> findByConnectionIdOrderByStartedAtDesc(UUID connectionId, Pageable pageable);
 
     boolean existsByConnectionIdAndStatus(UUID connectionId, String status);
+
+    Optional<SyncRunEntity> findFirstByConnectionIdOrderByStartedAtDesc(UUID connectionId);
 }

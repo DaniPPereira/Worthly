@@ -3,6 +3,9 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: none
+  task:
+    scheduling:
+      enabled: false
 
 worthly:
   oauth:
@@ -15,5 +18,6 @@ worthly:
   enable-banking:
     application-id: test-enable-banking-app
     generate-ephemeral-key: true
+    discovery-ttl: PT0S
   crypto:
     generate-ephemeral-data-key: true

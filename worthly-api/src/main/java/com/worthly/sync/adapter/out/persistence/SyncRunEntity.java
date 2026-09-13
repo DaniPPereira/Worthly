@@ -86,6 +86,10 @@ public class SyncRunEntity {
         this.triggerType = triggerType;
     }
 
+    public String getTriggerType() {
+        return triggerType;
+    }
+
     public String getStatus() {
         return status;
     }

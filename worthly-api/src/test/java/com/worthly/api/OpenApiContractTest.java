@@ -30,7 +30,9 @@ class OpenApiContractTest {
                 "/connections/enable-banking/authorize",
                 "/connections/enable-banking/callback",
                 "/accounts",
-                "/transactions");
+                "/transactions",
+                "/notifications",
+                "/exports/transactions.csv");
         Map<String, Object> me = (Map<String, Object>) paths.get("/me");
         assertThat(me).containsKeys("get", "patch");
     }

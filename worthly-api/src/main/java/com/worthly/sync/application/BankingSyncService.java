@@ -18,6 +18,7 @@ import com.worthly.connections.application.EnableBankingModels;
 import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.infrastructure.crypto.PayloadCrypto;
 import com.worthly.infrastructure.security.TokenHashes;
+import com.worthly.notifications.application.NotificationService;
 import com.worthly.shared.web.ApiException;
 import com.worthly.sync.adapter.out.persistence.SyncRunEntity;
 import com.worthly.sync.adapter.out.persistence.SyncRunRepository;
@@ -32,7 +33,9 @@ import java.util.UUID;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class BankingSyncService {
@@ -50,6 +53,9 @@ public class BankingSyncService {
     private final SyncRunRepository syncRuns;
     private final PayloadCrypto payloadCrypto;
     private final AuditService auditService;
+    private final NotificationService notificationService;
+    private final ConnectionLock connectionLock;
+    private final TransactionTemplate transactionTemplate;
     private final WorthlyProperties.EnableBanking properties;
 
     public BankingSyncService(
@@ -63,6 +69,9 @@ public class BankingSyncService {
             SyncRunRepository syncRuns,
             PayloadCrypto payloadCrypto,
             AuditService auditService,
+            NotificationService notificationService,
+            ConnectionLock connectionLock,
+            PlatformTransactionManager transactionManager,
             WorthlyProperties properties) {
         this.connectionService = connectionService;
         this.gateway = gateway;
@@ -74,21 +83,51 @@ public class BankingSyncService {
         this.syncRuns = syncRuns;
         this.payloadCrypto = payloadCrypto;
         this.auditService = auditService;
+        this.notificationService = notificationService;
+        this.connectionLock = connectionLock;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.properties = properties.getEnableBanking();
     }
 
-    @Transactional
     public SyncRunEntity requestSync(UUID userId, UUID connectionId) {
+        java.util.concurrent.atomic.AtomicReference<SyncRunEntity> result =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        boolean locked = connectionLock.tryWithLock(
+                connectionId, () -> result.set(runLocked(userId, connectionId, "MANUAL", true)));
+        if (!locked) {
+            throw ApiException.of(HttpStatus.CONFLICT, "sync_already_running");
+        }
+        return result.get();
+    }
+
+    public void requestScheduledSync(ProviderConnectionEntity connection) {
+        connectionLock.tryWithLock(
+                connection.getId(), () -> runLocked(connection.getUserId(), connection.getId(), "SCHEDULED", false));
+    }
+
+    private SyncRunEntity runLocked(UUID userId, UUID connectionId, String triggerType, boolean failIfBusy) {
+        return transactionTemplate.execute(
+                status -> executeSync(userId, connectionId, triggerType, failIfBusy));
+    }
+
+    private SyncRunEntity executeSync(UUID userId, UUID connectionId, String triggerType, boolean failIfBusy) {
         ProviderConnectionEntity connection = connectionService.requireOwned(userId, connectionId);
         if ("DISABLED".equals(connection.getStatus())) {
-            throw ApiException.of(HttpStatus.BAD_REQUEST, "connection_disabled");
+            if (failIfBusy) {
+                throw ApiException.of(HttpStatus.BAD_REQUEST, "connection_disabled");
+            }
+            return null;
         }
-        if (syncRuns.existsByConnectionIdAndStatus(connectionId, "RUNNING")) {
-            throw ApiException.of(HttpStatus.CONFLICT, "sync_already_running");
+        if (syncRuns.existsByConnectionIdAndStatus(connectionId, "RUNNING")
+                || syncRuns.existsByConnectionIdAndStatus(connectionId, "QUEUED")) {
+            if (failIfBusy) {
+                throw ApiException.of(HttpStatus.CONFLICT, "sync_already_running");
+            }
+            return null;
         }
         SyncRunEntity run = new SyncRunEntity();
         run.setConnectionId(connectionId);
-        run.setTriggerType("MANUAL");
+        run.setTriggerType(triggerType);
         run.setStatus("RUNNING");
         run.setCorrelationId(correlationId());
         syncRuns.save(run);
@@ -286,6 +325,12 @@ public class BankingSyncService {
         connection.setLastErrorCode(errorCode);
         connections.save(connection);
         syncRuns.save(run);
+        if ("REAUTH_REQUIRED".equals(connectionStatus)) {
+            notificationService.remind(connection.getUserId(), "CONNECTION_REAUTH_REQUIRED");
+        }
+        if ("CONFIGURATION_REQUIRED".equals(connectionStatus)) {
+            notificationService.remind(connection.getUserId(), "CONFIGURATION_REQUIRED");
+        }
         return run;
     }
 

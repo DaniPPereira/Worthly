@@ -69,3 +69,5 @@ worthly:
   crypto:
     data-key-file: ${WORTHLY_DATA_KEY_FILE:}
     generate-ephemeral-data-key: ${WORTHLY_CRYPTO_GENERATE_EPHEMERAL_DATA_KEY:false}
+  sync:
+    tick: ${WORTHLY_SYNC_TICK:PT15M}
