@@ -36,6 +36,7 @@ services:
       WORTHLY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/bootstrap_password
       WORTHLY_WEB_CLIENT_SECRET_FILE: /run/secrets/web_client_secret
       WORTHLY_OAUTH_GENERATE_EPHEMERAL_SIGNING_KEY: "true"
+      WORTHLY_CRYPTO_GENERATE_EPHEMERAL_DATA_KEY: "true"
       WORTHLY_ISSUER: ${WORTHLY_ISSUER:-http://localhost:8080}
       WORTHLY_WEB_REDIRECT_URI: ${WORTHLY_WEB_REDIRECT_URI:-http://localhost:3000/auth/callback}
       WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN:-http://localhost:3000}

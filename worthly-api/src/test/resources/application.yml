@@ -12,3 +12,8 @@ worthly:
     memory-kb: 1024
     iterations: 1
     parallelism: 1
+  enable-banking:
+    application-id: test-enable-banking-app
+    generate-ephemeral-key: true
+  crypto:
+    generate-ephemeral-data-key: true

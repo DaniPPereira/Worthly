@@ -15,6 +15,8 @@ public class WorthlyProperties {
     private final OAuth oauth = new OAuth();
     private final Argon2 argon2 = new Argon2();
     private final Cors cors = new Cors();
+    private final EnableBanking enableBanking = new EnableBanking();
+    private final Crypto crypto = new Crypto();
 
     public String getIssuer() {
         return issuer;
@@ -38,6 +40,14 @@ public class WorthlyProperties {
 
     public Cors getCors() {
         return cors;
+    }
+
+    public EnableBanking getEnableBanking() {
+        return enableBanking;
+    }
+
+    public Crypto getCrypto() {
+        return crypto;
     }
 
     public static class Bootstrap {
@@ -221,6 +231,135 @@ public class WorthlyProperties {
 
         public void setAllowedOrigins(List<String> allowedOrigins) {
             this.allowedOrigins = allowedOrigins;
+        }
+    }
+
+    public static class EnableBanking {
+        private String baseUrl = "https://api.enablebanking.com";
+        private String applicationId = "";
+        private String privateKeyFile = "";
+        private boolean generateEphemeralKey = false;
+        private String callbackUrl = "http://localhost:8080/api/v1/connections/enable-banking/callback";
+        private String webResultUrl = "http://localhost:3000/connections/result";
+        private String mobileResultUrl = "http://localhost:3000/mobile-connections/result";
+        private Duration discoveryTtl = Duration.ofMinutes(15);
+        private Duration authorizationTtl = Duration.ofMinutes(10);
+        private Duration transactionLookback = Duration.ofDays(90);
+        private Duration jwtTtl = Duration.ofHours(1);
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getApplicationId() {
+            return applicationId;
+        }
+
+        public void setApplicationId(String applicationId) {
+            this.applicationId = applicationId;
+        }
+
+        public String getPrivateKeyFile() {
+            return privateKeyFile;
+        }
+
+        public void setPrivateKeyFile(String privateKeyFile) {
+            this.privateKeyFile = privateKeyFile;
+        }
+
+        public boolean isGenerateEphemeralKey() {
+            return generateEphemeralKey;
+        }
+
+        public void setGenerateEphemeralKey(boolean generateEphemeralKey) {
+            this.generateEphemeralKey = generateEphemeralKey;
+        }
+
+        public String getCallbackUrl() {
+            return callbackUrl;
+        }
+
+        public void setCallbackUrl(String callbackUrl) {
+            this.callbackUrl = callbackUrl;
+        }
+
+        public String getWebResultUrl() {
+            return webResultUrl;
+        }
+
+        public void setWebResultUrl(String webResultUrl) {
+            this.webResultUrl = webResultUrl;
+        }
+
+        public String getMobileResultUrl() {
+            return mobileResultUrl;
+        }
+
+        public void setMobileResultUrl(String mobileResultUrl) {
+            this.mobileResultUrl = mobileResultUrl;
+        }
+
+        public Duration getDiscoveryTtl() {
+            return discoveryTtl;
+        }
+
+        public void setDiscoveryTtl(Duration discoveryTtl) {
+            this.discoveryTtl = discoveryTtl;
+        }
+
+        public Duration getAuthorizationTtl() {
+            return authorizationTtl;
+        }
+
+        public void setAuthorizationTtl(Duration authorizationTtl) {
+            this.authorizationTtl = authorizationTtl;
+        }
+
+        public Duration getTransactionLookback() {
+            return transactionLookback;
+        }
+
+        public void setTransactionLookback(Duration transactionLookback) {
+            this.transactionLookback = transactionLookback;
+        }
+
+        public Duration getJwtTtl() {
+            return jwtTtl;
+        }
+
+        public void setJwtTtl(Duration jwtTtl) {
+            this.jwtTtl = jwtTtl;
+        }
+
+        public boolean isConfigured() {
+            return applicationId != null
+                    && !applicationId.isBlank()
+                    && (generateEphemeralKey || (privateKeyFile != null && !privateKeyFile.isBlank()));
+        }
+    }
+
+    public static class Crypto {
+        private String dataKeyFile = "";
+        private boolean generateEphemeralDataKey = false;
+
+        public String getDataKeyFile() {
+            return dataKeyFile;
+        }
+
+        public void setDataKeyFile(String dataKeyFile) {
+            this.dataKeyFile = dataKeyFile;
+        }
+
+        public boolean isGenerateEphemeralDataKey() {
+            return generateEphemeralDataKey;
+        }
+
+        public void setGenerateEphemeralDataKey(boolean generateEphemeralDataKey) {
+            this.generateEphemeralDataKey = generateEphemeralDataKey;
         }
     }
 }

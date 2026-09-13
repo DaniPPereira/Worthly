@@ -25,5 +25,6 @@ class UnauthorizedApiIT extends AbstractIntegrationTest {
     void registerEndpointDoesNotExist() throws Exception {
         mockMvc.perform(post("/register")).andExpect(status().isForbidden());
         mockMvc.perform(post("/api/v1/register")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/v1/connections")).andExpect(status().isUnauthorized());
     }
 }

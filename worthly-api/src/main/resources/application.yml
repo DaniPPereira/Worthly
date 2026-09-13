@@ -10,6 +10,7 @@ spring:
       ddl-auto: none
     properties:
       hibernate:
+        auto_quote_keyword: true
         jdbc:
           time_zone: UTC
   flyway:
@@ -57,3 +58,14 @@ worthly:
   cors:
     allowed-origins:
       - ${WORTHLY_WEB_ORIGIN:http://localhost:3000}
+  enable-banking:
+    base-url: ${WORTHLY_ENABLE_BANKING_BASE_URL:https://api.enablebanking.com}
+    application-id: ${WORTHLY_ENABLE_BANKING_APPLICATION_ID:}
+    private-key-file: ${WORTHLY_ENABLE_BANKING_PRIVATE_KEY_FILE:}
+    generate-ephemeral-key: ${WORTHLY_ENABLE_BANKING_GENERATE_EPHEMERAL_KEY:false}
+    callback-url: ${WORTHLY_ENABLE_BANKING_CALLBACK_URL:http://localhost:8080/api/v1/connections/enable-banking/callback}
+    web-result-url: ${WORTHLY_ENABLE_BANKING_WEB_RESULT_URL:http://localhost:3000/connections/result}
+    mobile-result-url: ${WORTHLY_ENABLE_BANKING_MOBILE_RESULT_URL:http://localhost:3000/mobile-connections/result}
+  crypto:
+    data-key-file: ${WORTHLY_DATA_KEY_FILE:}
+    generate-ephemeral-data-key: ${WORTHLY_CRYPTO_GENERATE_EPHEMERAL_DATA_KEY:false}

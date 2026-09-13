@@ -12,7 +12,7 @@ class OpenApiContractTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void openApiParsesAndExposesPhase0Operations() throws Exception {
+    void openApiParsesAndExposesPhase0AndPhase1Operations() throws Exception {
         Path spec = Path.of("..", "api", "openapi.yaml");
         assertThat(spec).exists();
         Map<String, Object> root = new Yaml().load(Files.readString(spec));
@@ -20,7 +20,17 @@ class OpenApiContractTest {
         Map<String, Object> info = (Map<String, Object>) root.get("info");
         assertThat(info.get("version")).isEqualTo("4.1.0");
         Map<String, Object> paths = (Map<String, Object>) root.get("paths");
-        assertThat(paths).containsKeys("/me", "/me/logout", "/devices", "/devices/{deviceId}");
+        assertThat(paths).containsKeys(
+                "/me",
+                "/me/logout",
+                "/devices",
+                "/devices/{deviceId}",
+                "/connections",
+                "/connections/banks",
+                "/connections/enable-banking/authorize",
+                "/connections/enable-banking/callback",
+                "/accounts",
+                "/transactions");
         Map<String, Object> me = (Map<String, Object>) paths.get("/me");
         assertThat(me).containsKeys("get", "patch");
     }

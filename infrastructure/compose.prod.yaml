@@ -40,6 +40,7 @@ services:
       WORTHLY_WEB_CLIENT_SECRET_FILE: /run/secrets/web_client_secret
       WORTHLY_OAUTH_GENERATE_EPHEMERAL_SIGNING_KEY: "false"
       WORTHLY_OAUTH_SIGNING_KEY_FILE: /run/secrets/oauth_signing_key
+      WORTHLY_DATA_KEY_FILE: /run/secrets/data_key
       WORTHLY_ISSUER: ${WORTHLY_ISSUER}
       WORTHLY_WEB_REDIRECT_URI: ${WORTHLY_WEB_REDIRECT_URI}
       WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN}
@@ -47,6 +48,7 @@ services:
       - bootstrap_password
       - web_client_secret
       - oauth_signing_key
+      - data_key
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -88,6 +90,8 @@ secrets:
     file: ${WORTHLY_SESSION_SECRET_FILE:-./secrets/examples/session-secret.txt}
   oauth_signing_key:
     file: ${WORTHLY_OAUTH_SIGNING_KEY_FILE}
+  data_key:
+    file: ${WORTHLY_DATA_KEY_FILE}
 
 volumes:
   worthly-pg:

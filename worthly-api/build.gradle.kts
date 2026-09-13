@@ -42,6 +42,7 @@ dependencies {
     testImplementation("org.testcontainers:junit-jupiter")
     testImplementation("org.testcontainers:postgresql")
     testImplementation("org.yaml:snakeyaml")
+    testImplementation("org.wiremock:wiremock-standalone:3.13.1")
 }
 
 tasks.withType<Test> {
