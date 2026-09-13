@@ -1,0 +1,14 @@
+spring:
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+
+worthly:
+  oauth:
+    generate-ephemeral-signing-key: true
+    web-client-secret: test-web-client-secret
+  argon2:
+    memory-kb: 1024
+    iterations: 1
+    parallelism: 1

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>Worthly sign in</title>
+    <style>
+        body { font-family: sans-serif; margin: 2rem auto; max-width: 22rem; }
+        label { display: block; margin-top: 1rem; }
+        input { width: 100%; padding: 0.4rem; }
+        button { margin-top: 1rem; padding: 0.5rem 1rem; }
+        .error { color: #a40000; }
+    </style>
+</head>
+<body>
+<h1>Worthly</h1>
+<p>Sign in as the owner.</p>
+<p class="error" th:if="${param.error}">Sign-in failed.</p>
+<form th:action="@{/login}" method="post">
+    <input type="hidden" th:if="${_csrf}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+    <label>Email <input type="email" name="username" autocomplete="username" required/></label>
+    <label>Password <input type="password" name="password" autocomplete="current-password" required/></label>
+    <button type="submit">Sign in</button>
+</form>
+</body>
+</html>

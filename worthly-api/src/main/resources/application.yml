@@ -1,0 +1,59 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: worthly-api
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+  datasource:
+    url: ${WORTHLY_DATASOURCE_URL:jdbc:postgresql://localhost:5432/worthly}
+    username: ${WORTHLY_DATASOURCE_USERNAME:worthly}
+    password: ${WORTHLY_DATASOURCE_PASSWORD:worthly}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: ping
+        readiness:
+          include: db,ownerBootstrap
+  server:
+    port: 8081
+
+logging:
+  pattern:
+    console: "%d{ISO8601} %-5level [%X{correlationId}] %logger{36} - %msg%n"
+
+worthly:
+  issuer: ${WORTHLY_ISSUER:http://localhost:8080}
+  bootstrap:
+    email: ${WORTHLY_BOOTSTRAP_EMAIL:}
+    password-file: ${WORTHLY_BOOTSTRAP_PASSWORD_FILE:}
+  oauth:
+    signing-key-file: ${WORTHLY_OAUTH_SIGNING_KEY_FILE:}
+    generate-ephemeral-signing-key: ${WORTHLY_OAUTH_GENERATE_EPHEMERAL_SIGNING_KEY:false}
+    web-client-secret-file: ${WORTHLY_WEB_CLIENT_SECRET_FILE:}
+    web-redirect-uris:
+      - ${WORTHLY_WEB_REDIRECT_URI:http://localhost:3000/auth/callback}
+    mobile-redirect-uris:
+      - ${WORTHLY_MOBILE_REDIRECT_URI:http://localhost:3000/mobile-auth/callback}
+      - https://links.worthly.local/auth/callback
+  cors:
+    allowed-origins:
+      - ${WORTHLY_WEB_ORIGIN:http://localhost:3000}
