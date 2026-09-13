@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   if (session) {
     await apiFetch(session, "/me/logout", { method: "POST" });
   }
-  const response = NextResponse.redirect(new URL("/", config.origin), { status: 303 });
+  const response = NextResponse.redirect(new URL("/login", config.origin), { status: 303 });
   response.cookies.delete(SESSION_COOKIE);
   response.cookies.delete(CSRF_COOKIE);
   return response;

@@ -54,11 +54,16 @@ async function proxy(
   }
   const upstream = await apiFetch(session, `${suffix}${incomingUrl.search}`, init);
   const body = await upstream.text();
+  const headers = new Headers({
+    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
+  });
+  const disposition = upstream.headers.get("content-disposition");
+  if (disposition) {
+    headers.set("Content-Disposition", disposition);
+  }
   const response = new NextResponse(body, {
     status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") ?? "application/json",
-    },
+    headers,
   });
   if (refreshed) {
     response.cookies.set(SESSION_COOKIE, refreshed, sessionCookieOptions);
