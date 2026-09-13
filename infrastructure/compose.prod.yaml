@@ -1,0 +1,93 @@
+# Production Compose. PostgreSQL is not published on the host.
+# Provide real secret files and a PKCS#8 signing key via env paths.
+#   docker compose -f infrastructure/compose.prod.yaml up --build
+
+name: worthly
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: worthly
+      POSTGRES_USER: worthly
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - worthly-pg:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worthly -d worthly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../worthly-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      WORTHLY_DATASOURCE_URL: jdbc:postgresql://postgres:5432/worthly
+      WORTHLY_DATASOURCE_USERNAME: worthly
+      WORTHLY_DATASOURCE_PASSWORD: ${WORTHLY_DATASOURCE_PASSWORD}
+      WORTHLY_BOOTSTRAP_EMAIL: ${WORTHLY_BOOTSTRAP_EMAIL}
+      WORTHLY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/bootstrap_password
+      WORTHLY_WEB_CLIENT_SECRET_FILE: /run/secrets/web_client_secret
+      WORTHLY_OAUTH_GENERATE_EPHEMERAL_SIGNING_KEY: "false"
+      WORTHLY_OAUTH_SIGNING_KEY_FILE: /run/secrets/oauth_signing_key
+      WORTHLY_ISSUER: ${WORTHLY_ISSUER}
+      WORTHLY_WEB_REDIRECT_URI: ${WORTHLY_WEB_REDIRECT_URI}
+      WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN}
+    secrets:
+      - bootstrap_password
+      - web_client_secret
+      - oauth_signing_key
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: ../worthly-web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      WORTHLY_API_URL: http://api:8080
+      WORTHLY_ISSUER: ${WORTHLY_ISSUER}
+      WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN}
+      WORTHLY_WEB_CLIENT_ID: worthly-web
+      WORTHLY_WEB_CLIENT_SECRET_FILE: /run/secrets/web_client_secret
+      WORTHLY_SESSION_SECRET_FILE: /run/secrets/session_secret
+      NODE_ENV: production
+    secrets:
+      - web_client_secret
+      - session_secret
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+secrets:
+  postgres_password:
+    file: ${WORTHLY_POSTGRES_PASSWORD_FILE:-./secrets/examples/postgres-password.txt}
+  bootstrap_password:
+    file: ${WORTHLY_BOOTSTRAP_PASSWORD_FILE:-./secrets/examples/bootstrap-password.txt}
+  web_client_secret:
+    file: ${WORTHLY_WEB_CLIENT_SECRET_FILE:-./secrets/examples/web-client-secret.txt}
+  session_secret:
+    file: ${WORTHLY_SESSION_SECRET_FILE:-./secrets/examples/session-secret.txt}
+  oauth_signing_key:
+    file: ${WORTHLY_OAUTH_SIGNING_KEY_FILE}
+
+volumes:
+  worthly-pg:

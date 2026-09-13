@@ -1,0 +1,84 @@
+# Local development Compose. PostgreSQL is published on localhost:5432.
+# Production overlay: compose.prod.yaml (database port is not published).
+
+name: worthly
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: worthly
+      POSTGRES_USER: worthly
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - worthly-pg:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U worthly -d worthly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../worthly-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      WORTHLY_DATASOURCE_URL: jdbc:postgresql://postgres:5432/worthly
+      WORTHLY_DATASOURCE_USERNAME: worthly
+      WORTHLY_DATASOURCE_PASSWORD: worthly
+      WORTHLY_BOOTSTRAP_EMAIL: ${WORTHLY_BOOTSTRAP_EMAIL:-owner@localhost}
+      WORTHLY_BOOTSTRAP_PASSWORD_FILE: /run/secrets/bootstrap_password
+      WORTHLY_WEB_CLIENT_SECRET_FILE: /run/secrets/web_client_secret
+      WORTHLY_OAUTH_GENERATE_EPHEMERAL_SIGNING_KEY: "true"
+      WORTHLY_ISSUER: ${WORTHLY_ISSUER:-http://localhost:8080}
+      WORTHLY_WEB_REDIRECT_URI: ${WORTHLY_WEB_REDIRECT_URI:-http://localhost:3000/auth/callback}
+      WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN:-http://localhost:3000}
+    secrets:
+      - bootstrap_password
+      - web_client_secret
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8081/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    build:
+      context: ../worthly-web
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      WORTHLY_API_URL: http://api:8080
+      WORTHLY_ISSUER: ${WORTHLY_ISSUER:-http://localhost:8080}
+      WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN:-http://localhost:3000}
+      WORTHLY_WEB_CLIENT_ID: worthly-web
+      WORTHLY_WEB_CLIENT_SECRET_FILE: /run/secrets/web_client_secret
+      WORTHLY_SESSION_SECRET_FILE: /run/secrets/session_secret
+      NODE_ENV: production
+    secrets:
+      - web_client_secret
+      - session_secret
+    ports:
+      - "3000:3000"
+
+secrets:
+  postgres_password:
+    file: ./secrets/examples/postgres-password.txt
+  bootstrap_password:
+    file: ./secrets/examples/bootstrap-password.txt
+  web_client_secret:
+    file: ./secrets/examples/web-client-secret.txt
+  session_secret:
+    file: ./secrets/examples/session-secret.txt
+
+volumes:
+  worthly-pg:
