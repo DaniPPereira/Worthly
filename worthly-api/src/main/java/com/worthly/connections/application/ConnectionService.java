@@ -15,6 +15,10 @@ import com.worthly.connections.adapter.out.persistence.ProviderConnectionReposit
 import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.infrastructure.crypto.PayloadCrypto;
 import com.worthly.infrastructure.security.TokenHashes;
+import com.worthly.investments.adapter.out.persistence.InvestmentAccountEntity;
+import com.worthly.investments.adapter.out.persistence.InvestmentAccountRepository;
+import com.worthly.investments.adapter.out.persistence.InvestmentEventRepository;
+import com.worthly.investments.adapter.out.persistence.PositionSnapshotRepository;
 import com.worthly.shared.web.ApiException;
 import com.worthly.transfers.adapter.out.persistence.TransferMatchRepository;
 import java.security.SecureRandom;
@@ -41,6 +45,9 @@ public class ConnectionService {
     private final ExternalTransactionRepository externalTransactions;
     private final TransactionRepository transactions;
     private final TransferMatchRepository transferMatches;
+    private final InvestmentAccountRepository investmentAccounts;
+    private final PositionSnapshotRepository positionSnapshots;
+    private final InvestmentEventRepository investmentEvents;
     private final PayloadCrypto payloadCrypto;
     private final AuditService auditService;
     private final WorthlyProperties.EnableBanking properties;
@@ -56,6 +63,9 @@ public class ConnectionService {
             ExternalTransactionRepository externalTransactions,
             TransactionRepository transactions,
             TransferMatchRepository transferMatches,
+            InvestmentAccountRepository investmentAccounts,
+            PositionSnapshotRepository positionSnapshots,
+            InvestmentEventRepository investmentEvents,
             PayloadCrypto payloadCrypto,
             AuditService auditService,
             WorthlyProperties properties) {
@@ -68,6 +78,9 @@ public class ConnectionService {
         this.externalTransactions = externalTransactions;
         this.transactions = transactions;
         this.transferMatches = transferMatches;
+        this.investmentAccounts = investmentAccounts;
+        this.positionSnapshots = positionSnapshots;
+        this.investmentEvents = investmentEvents;
         this.payloadCrypto = payloadCrypto;
         this.auditService = auditService;
         this.properties = properties.getEnableBanking();
@@ -202,6 +215,13 @@ public class ConnectionService {
             throw ApiException.of(HttpStatus.BAD_REQUEST, "confirm_required");
         }
         ProviderConnectionEntity connection = requireOwned(userId, connectionId);
+        List<InvestmentAccountEntity> investmentOwned = investmentAccounts.findByProviderConnectionId(connection.getId());
+        List<UUID> investmentIds = investmentOwned.stream().map(InvestmentAccountEntity::getId).toList();
+        if (!investmentIds.isEmpty()) {
+            investmentEvents.deleteByInvestmentAccountIdIn(investmentIds);
+            positionSnapshots.deleteByInvestmentAccountIdIn(investmentIds);
+        }
+        investmentAccounts.deleteAll(investmentOwned);
         List<FinancialAccountEntity> owned = accounts.findByConnectionId(connection.getId());
         List<UUID> transactionIds = owned.stream()
                 .flatMap(account -> transactions.findAllByAccountId(account.getId()).stream())

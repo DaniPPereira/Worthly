@@ -69,5 +69,11 @@ worthly:
   crypto:
     data-key-file: ${WORTHLY_DATA_KEY_FILE:}
     generate-ephemeral-data-key: ${WORTHLY_CRYPTO_GENERATE_EPHEMERAL_DATA_KEY:false}
+  trading-212:
+    base-url: ${WORTHLY_T212_BASE_URL:https://demo.trading212.com/api/v0}
+    api-key: ${WORTHLY_T212_API_KEY:}
+    api-secret: ${WORTHLY_T212_API_SECRET:}
+    api-key-file: ${WORTHLY_T212_API_KEY_FILE:}
+    api-secret-file: ${WORTHLY_T212_API_SECRET_FILE:}
   sync:
     tick: ${WORTHLY_SYNC_TICK:PT15M}

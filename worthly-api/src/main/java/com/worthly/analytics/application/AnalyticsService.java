@@ -10,6 +10,7 @@ import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntit
 import com.worthly.banking.transactions.adapter.out.persistence.TransactionRepository;
 import com.worthly.identity.application.OwnerService;
 import com.worthly.identity.domain.Owner;
+import com.worthly.investments.application.InvestmentQueryService;
 import com.worthly.shared.web.ApiException;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -33,6 +34,7 @@ public class AnalyticsService {
     private final BalanceSnapshotRepository balances;
     private final TransactionRepository transactions;
     private final OwnerService ownerService;
+    private final InvestmentQueryService investments;
     private final Clock clock;
 
     public AnalyticsService(
@@ -40,11 +42,13 @@ public class AnalyticsService {
             BalanceSnapshotRepository balances,
             TransactionRepository transactions,
             OwnerService ownerService,
+            InvestmentQueryService investments,
             Clock clock) {
         this.accounts = accounts;
         this.balances = balances;
         this.transactions = transactions;
         this.ownerService = ownerService;
+        this.investments = investments;
         this.clock = clock;
     }
 
@@ -57,16 +61,19 @@ public class AnalyticsService {
             LiquidCashSelector.select(account, snapshots).ifPresent(snapshot -> liquid.merge(
                     snapshot.getCurrency(), snapshot.getAmount(), BigDecimal::add));
         }
+        Map<String, BigDecimal> investment = investments.investmentValueByCurrency(userId);
+        java.util.TreeSet<String> currencies = new java.util.TreeSet<>();
+        currencies.addAll(liquid.keySet());
+        currencies.addAll(investment.keySet());
         List<WealthCurrency> totals = new ArrayList<>();
-        for (Map.Entry<String, BigDecimal> entry : liquid.entrySet()) {
-            String currency = entry.getKey();
-            BigDecimal cash = entry.getValue();
-            BigDecimal investment = BigDecimal.ZERO;
+        for (String currency : currencies) {
+            BigDecimal cash = liquid.getOrDefault(currency, BigDecimal.ZERO);
+            BigDecimal invested = investment.getOrDefault(currency, BigDecimal.ZERO);
             totals.add(new WealthCurrency(
                     currency,
                     MoneyPresentation.amount(cash, currency),
-                    MoneyPresentation.amount(investment, currency),
-                    MoneyPresentation.amount(cash.add(investment), currency)));
+                    MoneyPresentation.amount(invested, currency),
+                    MoneyPresentation.amount(cash.add(invested), currency)));
         }
         return new WealthSummary(clock.instant(), owner.reportingTimezone(), totals);
     }

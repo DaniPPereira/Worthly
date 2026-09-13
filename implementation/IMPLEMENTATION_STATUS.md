@@ -1,41 +1,40 @@
 # Implementation status
 
-Current phase: **Phase 3 — Categorization, transfers, analytics**
-Current branch: `phase/3-categorization-analytics`
+Current phase: **Phase 4 — Trading 212**
+Current branch: `phase/4-trading-212`
 
 Phase 0: `phase/0-foundation` (pushed)
 Phase 1: `phase/1-enable-banking` (pushed)
 Phase 2: `phase/2-banking-domain` (pushed)
+Phase 3: `phase/3-categorization-analytics` (pushed)
 
 ## Completed in this branch
 
-- Flyway `V5` system taxonomy, categorization rules, transfer matches
-- Static merchant heuristic fixture (EQUALS then CONTAINS keys longer than 4)
-- User rules by priority; manual overrides never overwritten on sync
-- PATCH `/transactions/{id}` distinguishes omitted vs null `categoryId`/`notes`
-- Transfer matching with confidence thresholds, reject fingerprint, CSV match id
-- Analytics summary (liquid cash + investment 0 until Trading 212) and monthly formulas
-- CSV `categoryCode` / `categoryLabel` / `transferMatchId`
+- Configuration-backed unique `TRADING_212` connection (secrets never stored on the row)
+- Missing credentials -> `CONFIGURATION_REQUIRED`; HTTP 401/403 -> `ERROR`; transient failures keep `ACTIVE`
+- Read-only sync of account summary, positions, cash movements and dividends
+- `GET /investments/summary` and `/investments/positions`
+- Wealth summary includes brokerage cash + portfolio value per currency
+- Bank -> Trading 212 deposits auto-classified as `INVESTMENT_FUNDING`
 
 ## Tests executed
 
 | Area | Result | Evidence |
 | --- | --- | --- |
-| Normalizer, heuristic vs rule vs manual, transfer score, monthly formula | **TESTED LOCALLY** | `TextNormalizerTest`, `CategorizationServiceTest`, `TransferScoreTest`, `MonthlyTotalsTest` |
-| Seeded categories, rules, auto/suggest/reject, analytics, CSV | **TESTED WITH MOCK** | `CategorizationAnalyticsIT` |
-| Phase 0–2 suite | **TESTED LOCALLY** | `./gradlew test` |
-| Real Santander + Revolut together | **NOT YET VERIFIED** | needs owner Enable Banking app |
+| Secret present/absent/401 lifecycle | **TESTED LOCALLY** | `Trading212ConnectionServiceTest`, `RateLimitHeadersTest` |
+| Sync, investments API, funding match, analytics | **TESTED WITH MOCK** | `Trading212IT` |
+| Phase 0–3 suite | **TESTED LOCALLY** | `./gradlew test` |
+| Live Trading 212 account | **NOT YET VERIFIED** | needs owner read-only key |
 
-## Phase 3 acceptance
+## Phase 4 acceptance
 
-- [x] Taxonomy seeded and listed
-- [x] Rules and heuristics with documented precedence
-- [x] Transfer auto-link / suggest / reject
-- [x] Per-currency analytics; no cross-currency total
-- [ ] Real-account Enable Banking proof (deferred)
+- [x] Secret present upserts exactly one T212 connection
+- [x] Missing/invalid config is `CONFIGURATION_REQUIRED` / `ERROR`
+- [x] Summary, positions and history import
+- [x] Investment funding is not consumption expense
+- [ ] Live Trading 212 proof (deferred)
 
 ## Deferred
 
-- Trading 212 (Phase 4)
 - Web/mobile UI (Phases 5–6)
-- Real-account Enable Banking proof
+- Real-account Enable Banking and Trading 212 proof

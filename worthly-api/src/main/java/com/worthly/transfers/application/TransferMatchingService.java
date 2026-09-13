@@ -105,7 +105,9 @@ public class TransferMatchingService {
         entity.setStatus("LINKED");
         entity.setPairFingerprint(fingerprint);
         matches.save(entity);
-        applyInternalTransfer(left, right);
+        Map<UUID, FinancialAccountEntity> accountById = accounts.findByUserIdOrderByDisplayNameAsc(userId).stream()
+                .collect(Collectors.toMap(FinancialAccountEntity::getId, account -> account));
+        applyLinkedClassification(left, right, accountById);
         return entity;
     }
 
@@ -170,7 +172,7 @@ public class TransferMatchingService {
                     int confidence = TransferScore.score(
                             days,
                             hintsOwnedAccount(credit, debit, accountById),
-                            false,
+                            isTrading212(credit, debit, accountById),
                             looksLikePurchase(credit) || looksLikePurchase(debit));
                     String status = TransferScore.autoStatus(confidence);
                     if (status == null) {
@@ -205,7 +207,8 @@ public class TransferMatchingService {
             used.add(candidate.leftId());
             used.add(candidate.rightId());
             if ("LINKED".equals(candidate.status())) {
-                applyInternalTransfer(byId.get(candidate.leftId()), byId.get(candidate.rightId()));
+                applyLinkedClassification(
+                        byId.get(candidate.leftId()), byId.get(candidate.rightId()), accountById);
             }
         }
         for (TransferMatchEntity existing : List.copyOf(matches.findByUserIdOrderByConfidenceDesc(userId))) {
@@ -224,6 +227,39 @@ public class TransferMatchingService {
             tx.setCategorizationSource("UNCATEGORIZED");
             categorization.applyAutomatic(userId, tx);
             transactions.save(tx);
+        });
+    }
+
+    private void applyLinkedClassification(
+            TransactionEntity left, TransactionEntity right, Map<UUID, FinancialAccountEntity> accounts) {
+        FinancialAccountEntity leftAccount = left == null ? null : accounts.get(left.getAccountId());
+        FinancialAccountEntity rightAccount = right == null ? null : accounts.get(right.getAccountId());
+        boolean leftBroker = leftAccount != null && "BROKERAGE".equals(leftAccount.getType());
+        boolean rightBroker = rightAccount != null && "BROKERAGE".equals(rightAccount.getType());
+        if (leftBroker ^ rightBroker) {
+            TransactionEntity bank = leftBroker ? right : left;
+            TransactionEntity broker = leftBroker ? left : right;
+            boolean deposit = broker != null
+                    && "CREDIT".equals(broker.getDirection())
+                    && bank != null
+                    && "DEBIT".equals(bank.getDirection());
+            String code = deposit ? "transfer.investment_funding" : "transfer.investment_withdrawal";
+            assignCategory(bank, code);
+            assignCategory(broker, code);
+            return;
+        }
+        applyInternalTransfer(left, right);
+    }
+
+    private void assignCategory(TransactionEntity transaction, String code) {
+        if (transaction == null || "MANUAL".equals(transaction.getCategorizationSource())) {
+            return;
+        }
+        categories.findByCode(code).ifPresent(category -> {
+            transaction.setCategoryId(category.getId());
+            transaction.setEconomicType(categorization.economicTypeFor(category));
+            transaction.setCategorizationSource("RULE");
+            transactions.save(transaction);
         });
     }
 
@@ -255,6 +291,15 @@ public class TransferMatchingService {
             throw ApiException.of(HttpStatus.NOT_FOUND, "not_found");
         }
         return tx;
+    }
+
+    private static boolean isTrading212(
+            TransactionEntity left, TransactionEntity right, Map<UUID, FinancialAccountEntity> accounts) {
+        return isBrokerage(accounts.get(left.getAccountId())) || isBrokerage(accounts.get(right.getAccountId()));
+    }
+
+    private static boolean isBrokerage(FinancialAccountEntity account) {
+        return account != null && "BROKERAGE".equals(account.getType());
     }
 
     private static boolean hintsOwnedAccount(

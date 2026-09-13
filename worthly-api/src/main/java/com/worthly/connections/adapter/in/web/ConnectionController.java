@@ -4,7 +4,7 @@ import com.worthly.connections.adapter.out.persistence.ProviderConnectionEntity;
 import com.worthly.connections.application.ConnectionService;
 import com.worthly.connections.application.EnableBankingModels;
 import com.worthly.sync.adapter.out.persistence.SyncRunEntity;
-import com.worthly.sync.application.BankingSyncService;
+import com.worthly.sync.application.ConnectionSyncFacade;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -34,9 +34,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConnectionController {
 
     private final ConnectionService connectionService;
-    private final BankingSyncService syncService;
+    private final ConnectionSyncFacade syncService;
 
-    public ConnectionController(ConnectionService connectionService, BankingSyncService syncService) {
+    public ConnectionController(ConnectionService connectionService, ConnectionSyncFacade syncService) {
         this.connectionService = connectionService;
         this.syncService = syncService;
     }

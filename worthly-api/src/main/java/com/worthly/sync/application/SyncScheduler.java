@@ -19,14 +19,14 @@ public class SyncScheduler {
 
     private final ProviderConnectionRepository connections;
     private final SyncRunRepository syncRuns;
-    private final BankingSyncService syncService;
+    private final ConnectionSyncFacade syncService;
     private final NotificationService notifications;
     private final Clock clock;
 
     public SyncScheduler(
             ProviderConnectionRepository connections,
             SyncRunRepository syncRuns,
-            BankingSyncService syncService,
+            ConnectionSyncFacade syncService,
             NotificationService notifications,
             Clock clock) {
         this.connections = connections;

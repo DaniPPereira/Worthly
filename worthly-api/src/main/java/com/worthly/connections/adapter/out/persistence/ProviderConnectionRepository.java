@@ -11,6 +11,8 @@ public interface ProviderConnectionRepository extends JpaRepository<ProviderConn
 
     Optional<ProviderConnectionEntity> findByIdAndUserId(UUID id, UUID userId);
 
+    Optional<ProviderConnectionEntity> findByUserIdAndProvider(UUID userId, String provider);
+
     Optional<ProviderConnectionEntity> findFirstByUserIdAndProviderAndAspspNameAndAspspCountry(
             UUID userId, String provider, String aspspName, String aspspCountry);
 }

@@ -16,6 +16,7 @@ public class WorthlyProperties {
     private final Argon2 argon2 = new Argon2();
     private final Cors cors = new Cors();
     private final EnableBanking enableBanking = new EnableBanking();
+    private final Trading212 trading212 = new Trading212();
     private final Crypto crypto = new Crypto();
 
     public String getIssuer() {
@@ -44,6 +45,10 @@ public class WorthlyProperties {
 
     public EnableBanking getEnableBanking() {
         return enableBanking;
+    }
+
+    public Trading212 getTrading212() {
+        return trading212;
     }
 
     public Crypto getCrypto() {
@@ -339,6 +344,95 @@ public class WorthlyProperties {
             return applicationId != null
                     && !applicationId.isBlank()
                     && (generateEphemeralKey || (privateKeyFile != null && !privateKeyFile.isBlank()));
+        }
+    }
+
+    public static class Trading212 {
+        private String baseUrl = "https://demo.trading212.com/api/v0";
+        private String apiKey = "";
+        private String apiSecret = "";
+        private String apiKeyFile = "";
+        private String apiSecretFile = "";
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
+        }
+
+        public String getApiKey() {
+            return apiKey;
+        }
+
+        public void setApiKey(String apiKey) {
+            this.apiKey = apiKey;
+        }
+
+        public String getApiSecret() {
+            return apiSecret;
+        }
+
+        public void setApiSecret(String apiSecret) {
+            this.apiSecret = apiSecret;
+        }
+
+        public String getApiKeyFile() {
+            return apiKeyFile;
+        }
+
+        public void setApiKeyFile(String apiKeyFile) {
+            this.apiKeyFile = apiKeyFile;
+        }
+
+        public String getApiSecretFile() {
+            return apiSecretFile;
+        }
+
+        public void setApiSecretFile(String apiSecretFile) {
+            this.apiSecretFile = apiSecretFile;
+        }
+
+        public boolean credentialsPresent() {
+            return credentials() != null;
+        }
+
+        public Credentials credentials() {
+            String key = firstNonBlank(apiKey, readFile(apiKeyFile));
+            String secret = firstNonBlank(apiSecret, readFile(apiSecretFile));
+            if (key == null || secret == null) {
+                return null;
+            }
+            return new Credentials(key, secret);
+        }
+
+        private static String firstNonBlank(String inline, String fileValue) {
+            if (inline != null && !inline.isBlank()) {
+                return inline;
+            }
+            if (fileValue != null && !fileValue.isBlank()) {
+                return fileValue;
+            }
+            return null;
+        }
+
+        private static String readFile(String path) {
+            if (path == null || path.isBlank()) {
+                return null;
+            }
+            try {
+                return java.nio.file.Files.readString(java.nio.file.Path.of(path)).strip();
+            } catch (Exception ex) {
+                throw new IllegalStateException("Unable to read Trading 212 secret file");
+            }
+        }
+
+        public record Credentials(String key, String secret) {
+            @Override
+            public String toString() {
+                return "Credentials[redacted]";
+            }
         }
     }
 

@@ -45,7 +45,9 @@ public class BankingQueryService {
 
     @Transactional(readOnly = true)
     public List<FinancialAccountEntity> listAccounts(UUID userId) {
-        return accounts.findByUserIdOrderByDisplayNameAsc(userId);
+        return accounts.findByUserIdOrderByDisplayNameAsc(userId).stream()
+                .filter(account -> !"BROKERAGE".equals(account.getType()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

@@ -36,6 +36,8 @@ class OpenApiContractTest {
                 "/transfer-matches",
                 "/analytics/summary",
                 "/analytics/monthly",
+                "/investments/summary",
+                "/investments/positions",
                 "/notifications",
                 "/exports/transactions.csv");
         Map<String, Object> me = (Map<String, Object>) paths.get("/me");
