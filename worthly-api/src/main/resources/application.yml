@@ -55,6 +55,7 @@ worthly:
     mobile-redirect-uris:
       - ${WORTHLY_MOBILE_REDIRECT_URI:http://localhost:3000/mobile-auth/callback}
       - https://links.worthly.local/auth/callback
+      - worthly://auth/callback
   cors:
     allowed-origins:
       - ${WORTHLY_WEB_ORIGIN:http://localhost:3000}
@@ -65,7 +66,7 @@ worthly:
     generate-ephemeral-key: ${WORTHLY_ENABLE_BANKING_GENERATE_EPHEMERAL_KEY:false}
     callback-url: ${WORTHLY_ENABLE_BANKING_CALLBACK_URL:http://localhost:8080/api/v1/connections/enable-banking/callback}
     web-result-url: ${WORTHLY_ENABLE_BANKING_WEB_RESULT_URL:http://localhost:3000/connections/result}
-    mobile-result-url: ${WORTHLY_ENABLE_BANKING_MOBILE_RESULT_URL:http://localhost:3000/mobile-connections/result}
+    mobile-result-url: ${WORTHLY_ENABLE_BANKING_MOBILE_RESULT_URL:worthly://connections/result}
   crypto:
     data-key-file: ${WORTHLY_DATA_KEY_FILE:}
     generate-ephemeral-data-key: ${WORTHLY_CRYPTO_GENERATE_EPHEMERAL_DATA_KEY:false}

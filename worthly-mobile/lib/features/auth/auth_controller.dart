@@ -1,14 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:worthly_mobile/features/auth/auth_config.dart';
-import 'package:worthly_mobile/features/auth/auth_repository.dart';
-import 'package:worthly_mobile/features/auth/keychain_secure_storage.dart';
-
-final authRepositoryProvider = Provider<AuthRepository>((ref) {
-  return AuthRepository(
-    storage: KeychainSecureStorage(),
-    config: AuthConfig.local,
-  );
-});
+import 'package:worthly_mobile/features/session/session.dart';
 
 class AuthViewState {
   const AuthViewState({this.authorizationUrl});

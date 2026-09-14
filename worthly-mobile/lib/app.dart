@@ -1,53 +1,102 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:worthly_mobile/features/auth/auth_controller.dart';
-import 'package:worthly_mobile/features/me/me_controller.dart';
+import 'package:worthly_mobile/features/session/session.dart';
+import 'package:worthly_mobile/features/session/shell_data.dart';
+import 'package:worthly_mobile/screens/lock_screen.dart';
+import 'package:worthly_mobile/screens/shell.dart';
+import 'package:worthly_mobile/screens/sign_in_screen.dart';
+import 'package:worthly_mobile/theme/colors.dart';
+import 'package:worthly_mobile/theme/theme.dart';
+import 'package:worthly_mobile/widgets/rising_w.dart';
 
-class WorthlyApp extends StatelessWidget {
+class WorthlyApp extends ConsumerStatefulWidget {
   const WorthlyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Worthly',
-      home: const HomeScreen(),
-    );
-  }
+  ConsumerState<WorthlyApp> createState() => _WorthlyAppState();
 }
 
-class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+class _WorthlyAppState extends ConsumerState<WorthlyApp> with WidgetsBindingObserver {
+  StreamSubscription<Uri>? _links;
+  bool _obscured = false;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authControllerProvider);
-    final me = ref.watch(meControllerProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Worthly')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Phase 0 authentication skeleton'),
-            const SizedBox(height: 16),
-            if (auth.authorizationUrl != null)
-              SelectableText(auth.authorizationUrl!),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => ref.read(authControllerProvider.notifier).startLogin(),
-              child: const Text('Start PKCE sign-in'),
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    final appLinks = AppLinks();
+    _links = appLinks.uriLinkStream.listen(_onLink);
+    appLinks.getInitialLink().then((uri) {
+      if (uri != null) {
+        _onLink(uri);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _links?.cancel();
+    super.dispose();
+  }
+
+  void _onLink(Uri uri) {
+    if (uri.scheme != 'worthly') {
+      return;
+    }
+    if (uri.host == 'connections' && uri.path.contains('result')) {
+      ref.read(connectionResultProvider.notifier).state = uri.queryParameters['status'];
+      ref.read(tabIndexProvider.notifier).state = 3;
+      ref.read(connectionsOpenProvider.notifier).state = true;
+      ref.invalidate(shellDataProvider);
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      if (ref.read(obscureSwitcherProvider)) {
+        setState(() => _obscured = true);
+      }
+      ref.read(sessionProvider.notifier).lockIfEnabled();
+    }
+    if (state == AppLifecycleState.resumed) {
+      setState(() => _obscured = false);
+      if (ref.read(sessionProvider).phase == SessionPhase.ready) {
+        ref.invalidate(shellDataProvider);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = ref.watch(sessionProvider);
+    return MaterialApp(
+      title: 'Worthly',
+      debugShowCheckedModeBanner: false,
+      theme: worthlyTheme(),
+      home: Stack(
+        children: [
+          switch (session.phase) {
+            SessionPhase.boot => const Scaffold(
+              backgroundColor: WorthlyColors.paper,
+              body: Center(child: CircularProgressIndicator(color: WorthlyColors.pine)),
             ),
-            const SizedBox(height: 16),
-            me.when(
-              data: (owner) => owner == null
-                  ? const Text('Not signed in')
-                  : Text('Signed in as ${owner.email}'),
-              loading: () => const Text('Loading profile…'),
-              error: (error, _) => Text('Unable to load profile: $error'),
+            SessionPhase.signedOut => const SignInScreen(),
+            SessionPhase.locked => const LockScreen(),
+            SessionPhase.ready => const AppShell(),
+          },
+          if (_obscured)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: WorthlyColors.pine,
+                child: Center(child: RisingW(size: 56)),
+              ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }

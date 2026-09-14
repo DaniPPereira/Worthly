@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:worthly_mobile/features/auth/auth_config.dart';
-import 'package:worthly_mobile/features/auth/auth_controller.dart';
 import 'package:worthly_mobile/features/me/me_repository.dart';
 import 'package:worthly_mobile/features/me/owner.dart';
+import 'package:worthly_mobile/features/session/session.dart';
 
 final meRepositoryProvider = Provider<MeRepository>((ref) {
   return MeRepository(

@@ -32,10 +32,12 @@ class AuthRepository {
   final Pkce _pkce;
 
   String? _accessToken;
+  DateTime? _accessExpiresAt;
   String? _pendingVerifier;
   String? _pendingState;
 
   String? get accessToken => _accessToken;
+  bool get hasSession => _accessToken != null;
 
   Uri startLogin() {
     final pair = _pkce.generate();
@@ -66,27 +68,79 @@ class AuthRepository {
     if (code == null || state == null || state != _pendingState || _pendingVerifier == null) {
       throw StateError('invalid_callback');
     }
-    final response = await _http.post(
-      Uri.parse('${_config.issuer}/oauth2/token'),
-      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-      body: {
-        'grant_type': 'authorization_code',
-        'client_id': _config.clientId,
-        'code': code,
-        'redirect_uri': _config.redirectUri,
-        'code_verifier': _pendingVerifier!,
-      },
+    return _storeTokens(
+      await _http.post(
+        Uri.parse('${_config.issuer}/oauth2/token'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {
+          'grant_type': 'authorization_code',
+          'client_id': _config.clientId,
+          'code': code,
+          'redirect_uri': _config.redirectUri,
+          'code_verifier': _pendingVerifier!,
+        },
+      ),
     );
+  }
+
+  Future<bool> restore() async {
+    final refresh = await _storage.read(key: _refreshKey);
+    if (refresh == null) {
+      return false;
+    }
+    try {
+      await _exchangeRefresh(refresh);
+      return true;
+    } catch (_) {
+      await _storage.delete(key: _refreshKey);
+      return false;
+    }
+  }
+
+  Future<void> ensureFresh() async {
+    if (_accessToken != null &&
+        _accessExpiresAt != null &&
+        DateTime.now().isBefore(_accessExpiresAt!.subtract(const Duration(seconds: 60)))) {
+      return;
+    }
+    await refreshSession();
+  }
+
+  Future<void> refreshSession() async {
+    final refresh = await _storage.read(key: _refreshKey);
+    if (refresh == null) {
+      throw StateError('unauthorized');
+    }
+    await _exchangeRefresh(refresh);
+  }
+
+  Future<void> _exchangeRefresh(String refresh) async {
+    await _storeTokens(
+      await _http.post(
+        Uri.parse('${_config.issuer}/oauth2/token'),
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {
+          'grant_type': 'refresh_token',
+          'client_id': _config.clientId,
+          'refresh_token': refresh,
+        },
+      ),
+    );
+  }
+
+  Future<AuthSession> _storeTokens(http.Response response) async {
     if (response.statusCode != 200) {
       throw StateError('token_exchange_failed');
     }
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     final access = json['access_token'] as String?;
     final refresh = json['refresh_token'] as String?;
+    final expires = json['expires_in'] as int? ?? 600;
     if (access == null || refresh == null) {
       throw StateError('token_exchange_failed');
     }
     _accessToken = access;
+    _accessExpiresAt = DateTime.now().add(Duration(seconds: expires));
     await _storage.write(key: _refreshKey, value: refresh);
     _pendingVerifier = null;
     _pendingState = null;
@@ -102,6 +156,7 @@ class AuthRepository {
       );
     }
     _accessToken = null;
+    _accessExpiresAt = null;
     await _storage.delete(key: _refreshKey);
   }
 }

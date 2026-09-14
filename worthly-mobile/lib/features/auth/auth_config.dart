@@ -14,9 +14,11 @@ class AuthConfig {
   /// Public client: there is no client secret.
   String? get clientSecret => null;
 
+  String get callbackScheme => Uri.parse(redirectUri).scheme;
+
   static const local = AuthConfig(
     issuer: 'http://localhost:8080',
     apiUrl: 'http://localhost:8080',
-    redirectUri: 'http://localhost:3000/mobile-auth/callback',
+    redirectUri: 'worthly://auth/callback',
   );
 }

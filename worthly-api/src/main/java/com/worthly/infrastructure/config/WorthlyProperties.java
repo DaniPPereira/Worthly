@@ -85,7 +85,10 @@ public class WorthlyProperties {
         private String mobileClientId = "worthly-mobile";
         private List<String> webRedirectUris = new ArrayList<>(List.of("http://localhost:3000/auth/callback"));
         private List<String> mobileRedirectUris =
-                new ArrayList<>(List.of("http://localhost:3000/mobile-auth/callback", "https://links.worthly.local/auth/callback"));
+                new ArrayList<>(List.of(
+                        "http://localhost:3000/mobile-auth/callback",
+                        "https://links.worthly.local/auth/callback",
+                        "worthly://auth/callback"));
         private Duration accessTokenTtl = Duration.ofMinutes(10);
         private Duration refreshTokenIdleTtl = Duration.ofDays(14);
         private Duration refreshTokenAbsoluteTtl = Duration.ofDays(30);
@@ -246,7 +249,7 @@ public class WorthlyProperties {
         private boolean generateEphemeralKey = false;
         private String callbackUrl = "http://localhost:8080/api/v1/connections/enable-banking/callback";
         private String webResultUrl = "http://localhost:3000/connections/result";
-        private String mobileResultUrl = "http://localhost:3000/mobile-connections/result";
+        private String mobileResultUrl = "worthly://connections/result";
         private Duration discoveryTtl = Duration.ofMinutes(15);
         private Duration authorizationTtl = Duration.ofMinutes(10);
         private Duration transactionLookback = Duration.ofDays(90);
