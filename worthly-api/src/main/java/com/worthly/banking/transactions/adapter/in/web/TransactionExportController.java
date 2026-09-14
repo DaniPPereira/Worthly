@@ -66,7 +66,7 @@ public class TransactionExportController {
                 .collect(Collectors.toMap(CategoryEntity::getId, category -> category));
         StringBuilder csv = new StringBuilder();
         csv.append("id,accountId,reportingAt,direction,lifecycleStatus,economicType,")
-                .append("amount,currency,merchant,description,categoryCode,categoryLabel,notes,transferMatchId\n");
+                .append("amount,currency,merchant,description,location,categoryCode,categoryLabel,notes,transferMatchId\n");
         for (TransactionEntity tx : rows) {
             csv.append(row(tx, categoryById.get(tx.getCategoryId()), matchIds.get(tx.getId()))).append('\n');
         }
@@ -89,6 +89,7 @@ public class TransactionExportController {
                 csv(tx.getCurrency()),
                 csv(tx.getMerchant()),
                 csv(tx.getDescription()),
+                csv(tx.getLocation()),
                 csv(category == null ? "" : category.getCode()),
                 csv(category == null ? "" : category.getLabel()),
                 csv(tx.getNotes()),

@@ -104,12 +104,14 @@ public class ConnectionService {
             throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
         }
         EnableBankingModels.DiscoveredBank bank = discoveryService.requireV1Bank(name, country);
+        gateway.application().ifPresent(app -> {
+            if (!EnableBankingAuthSupport.redirectRegistered(app.redirectUrls(), properties.getCallbackUrl())) {
+                throw ApiException.of(HttpStatus.BAD_REQUEST, "redirect_url_mismatch");
+            }
+        });
         String state = randomState();
         Instant expiresAt = Instant.now().plus(properties.getAuthorizationTtl());
-        Instant validUntil = Instant.now().plusSeconds(Math.max(bank.maximumConsentValiditySeconds(), 90L * 24 * 3600));
-        if (bank.maximumConsentValiditySeconds() > 0) {
-            validUntil = Instant.now().plusSeconds(bank.maximumConsentValiditySeconds());
-        }
+        Instant validUntil = EnableBankingAuthSupport.consentValidUntil(bank.maximumConsentValiditySeconds(), Instant.now());
         EnableBankingModels.AuthStart start;
         try {
             start = gateway.startAuthorization(bank.name(), bank.country(), state, validUntil);

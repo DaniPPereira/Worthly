@@ -73,8 +73,16 @@ public class PayloadCrypto {
         if (file == null || file.isBlank()) {
             throw new IllegalStateException("worthly.crypto.data-key-file is required outside tests");
         }
+        Path path = Path.of(file);
         try {
-            String raw = Files.readString(Path.of(file), StandardCharsets.UTF_8).strip();
+            if (!Files.exists(path)) {
+                byte[] key = new byte[32];
+                new SecureRandom().nextBytes(key);
+                Files.createDirectories(path.getParent());
+                Files.writeString(path, Base64.getEncoder().encodeToString(key), StandardCharsets.UTF_8);
+                return key;
+            }
+            String raw = Files.readString(path, StandardCharsets.UTF_8).strip();
             byte[] decoded = tryDecode(raw);
             if (decoded.length != 32) {
                 throw new IllegalStateException("Data key must be 32 bytes");

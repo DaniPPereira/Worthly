@@ -135,6 +135,7 @@ class Tx {
     required this.money,
     this.merchant,
     this.description,
+    this.location,
     required this.reportingAt,
     this.categoryId,
     this.notes,
@@ -149,6 +150,7 @@ class Tx {
   final Money money;
   final String? merchant;
   final String? description;
+  final String? location;
   final String reportingAt;
   final String? categoryId;
   final String? notes;
@@ -169,6 +171,7 @@ class Tx {
       money: Money.fromJson(json['money'] as Map<String, dynamic>),
       merchant: json['merchant'] as String?,
       description: json['description'] as String?,
+      location: json['location'] as String?,
       reportingAt: json['reportingAt'] as String,
       categoryId: json['categoryId'] as String?,
       notes: json['notes'] as String?,
@@ -192,6 +195,7 @@ class Tx {
       money: money,
       merchant: merchant,
       description: description,
+      location: location,
       reportingAt: reportingAt,
       categoryId: categoryId ?? this.categoryId,
       notes: notes ?? this.notes,

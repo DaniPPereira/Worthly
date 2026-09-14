@@ -3,7 +3,7 @@ import { RisingW } from "@/components/brand/RisingW";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; registered?: string }>;
 }) {
   const params = await searchParams;
   const error =
@@ -12,6 +12,7 @@ export default async function LoginPage({
       : params.error === "state"
         ? "The sign-in attempt expired. Please try again."
         : null;
+  const registered = params.registered === "1";
 
   return (
     <main
@@ -31,14 +32,18 @@ export default async function LoginPage({
           <div style={{ font: "600 22px/1 var(--font-sans)", letterSpacing: "-.03em" }}>Worthly</div>
         </div>
         <p className="serif" style={{ fontSize: 28, margin: "22px 0 8px", lineHeight: 1.15 }}>
-          Private finance for one household.
+          Private finance, on your server.
         </p>
         <p className="muted">
-          Continue to sign in as the owner. The next screen is your Worthly login — the browser never receives OAuth tokens.
+          Sign in to continue. The next screen is your Worthly login — the browser never receives OAuth tokens.
         </p>
+        {registered ? <p style={{ color: "var(--gain)", fontSize: 13 }}>Account created. Sign in to continue.</p> : null}
         {error ? <p style={{ color: "var(--loss)", fontSize: 13 }}>{error}</p> : null}
         <a href="/login/start" className="btn btn-primary" style={{ marginTop: 18, textDecoration: "none", height: 44, width: "100%" }}>
           Sign in
+        </a>
+        <a href="/register" className="muted" style={{ display: "block", marginTop: 16, fontSize: 13, textAlign: "center" }}>
+          Create an account
         </a>
       </div>
     </main>

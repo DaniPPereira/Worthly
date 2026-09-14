@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { compareAmountDesc, formatAmount, formatRate, formatSignedAmount, groupByCurrency, weightPercent } from "./money.ts";
+import { addAmounts, compareAmountDesc, formatAmount, formatRate, formatSignedAmount, groupByCurrency, weightPercent } from "./money.ts";
 
 describe("money formatting", () => {
   it("formats EUR with Portuguese grouping and never uses a float", () => {
@@ -29,6 +29,12 @@ describe("money formatting", () => {
     );
     assert.equal(grouped.get("EUR")?.length, 2);
     assert.equal(grouped.get("USD")?.length, 1);
+  });
+
+  it("adds decimal strings in cents without a float", () => {
+    assert.equal(addAmounts("0.00", "112.05"), "112.05");
+    assert.equal(addAmounts("40.00", "12.50"), "52.50");
+    assert.equal(addAmounts("-8.40", "10.00"), "1.60");
   });
 
   it("computes same-currency weights with integer cents", () => {

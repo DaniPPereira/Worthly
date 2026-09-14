@@ -39,6 +39,21 @@ class WorthlyClient {
     return parse(jsonDecode(response.body));
   }
 
+  Future<void> register({required String email, required String password}) async {
+    final uri = Uri.parse('${_config.apiUrl}/api/v1/register');
+    final response = await _http.post(
+      uri,
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: jsonEncode({'email': email, 'password': password}),
+    );
+    if (response.statusCode == 409) {
+      throw StateError('email_taken');
+    }
+    if (response.statusCode >= 400) {
+      throw StateError('request_failed');
+    }
+  }
+
   Future<http.Response> _send(String method, String path, {Object? body, bool retried = false, String accept = 'application/json'}) async {
     await _auth.ensureFresh();
     final token = _auth.accessToken;
@@ -70,10 +85,29 @@ class WorthlyClient {
       return _send(method, path, body: body, retried: true, accept: accept);
     }
     if (response.statusCode >= 400) {
-      throw StateError('request_failed');
+      throw StateError(_problemCode(response));
     }
     return response;
   }
+}
+
+String _problemCode(http.Response response) {
+  try {
+    final json = jsonDecode(response.body);
+    if (json is Map<String, dynamic>) {
+      final detail = json['detail'];
+      if (detail is String && detail.isNotEmpty && !detail.contains(' ')) {
+        return detail;
+      }
+      final type = json['type'];
+      if (type is String && type.contains('/problems/')) {
+        return type.split('/problems/').last;
+      }
+    }
+  } catch (_) {
+    /* fall through */
+  }
+  return 'request_failed';
 }
 
 List<T> listOf<T>(dynamic json, T Function(Map<String, dynamic>) parse) {
@@ -93,3 +127,4 @@ List<BankChoice> parseBanks(dynamic json) => listOf(json, BankChoice.fromJson);
 List<TransferMatch> parseTransferMatches(dynamic json) => listOf(json, TransferMatch.fromJson);
 SyncRunPage parseSyncRuns(dynamic json) => SyncRunPage.fromJson(json as Map<String, dynamic>);
 String parseAuthUrl(dynamic json) => (json as Map<String, dynamic>)['url'] as String;
+Connection parseConnection(dynamic json) => Connection.fromJson(json as Map<String, dynamic>);

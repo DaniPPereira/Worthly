@@ -15,7 +15,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.client.WireMock;
 import com.worthly.AbstractIntegrationTest;
-import com.worthly.investments.application.Trading212ConnectionService;
 import com.worthly.support.OwnerAuthClient;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
@@ -64,9 +63,6 @@ class Trading212IT extends AbstractIntegrationTest {
     @Autowired
     ObjectMapper objectMapper;
 
-    @Autowired
-    Trading212ConnectionService trading212Connections;
-
     @BeforeEach
     void stubs() {
         T212.resetAll();
@@ -114,9 +110,13 @@ class Trading212IT extends AbstractIntegrationTest {
     }
 
     @Test
-    void configurationBackedSyncSummaryPositionsAndFundingMatch() throws Exception {
-        trading212Connections.reconcile();
+    void appBackedSyncSummaryPositionsAndFundingMatch() throws Exception {
         String token = OwnerAuthClient.accessToken(mockMvc, objectMapper);
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/trading-212")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"apiKey\":\"test-t212-key\",\"apiSecret\":\"test-t212-secret\"}"))
+                .andExpect(status().isOk());
         JsonNode connections = objectMapper.readTree(mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/connections")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -200,7 +200,14 @@ class Trading212IT extends AbstractIntegrationTest {
 
         T212.stubFor(WireMock.get(urlPathEqualTo("/api/v0/equity/account/summary"))
                 .willReturn(aResponse().withStatus(401)));
-        assertThat(trading212Connections.reconcile().orElseThrow().getStatus()).isEqualTo("ERROR");
+        MvcResult rejected = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/trading-212")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"apiKey\":\"test-t212-key\",\"apiSecret\":\"test-t212-secret\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(objectMapper.readTree(rejected.getResponse().getContentAsString()).get("status").asText())
+                .isEqualTo("ERROR");
     }
 
     private UUID connectBank(String token) throws Exception {

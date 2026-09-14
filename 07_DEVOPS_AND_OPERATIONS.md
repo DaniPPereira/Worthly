@@ -14,7 +14,7 @@ metrics stack
 Mobile is built separately and distributed as signed Android/iOS
 artifacts.
 
-Production host baseline for a single owner and 100k local
+Production host baseline for a registered household and 100k local
 transactions: **2 vCPU, 4 GiB RAM, 40 GiB disk** (database volume
 included). Smaller hosts are acceptable for local development.
 

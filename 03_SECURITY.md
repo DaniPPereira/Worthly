@@ -8,7 +8,7 @@ v1.
 
 ## Authentication
 
-Locked by ADR-002: - local single-owner identity; - Spring Authorization
+Locked by ADR-002: - local multi-user identity with public registration; - Spring Authorization
 Server / Spring Security standards-based OAuth/OIDC; - Web BFF session
 cookie; - Mobile Authorization Code + PKCE; - access token TTL 10
 minutes; - refresh token absolute TTL 30 days; - refresh token idle TTL
@@ -22,13 +22,13 @@ assume them.
 
 ## Password and owner
 
-Owner is bootstrapped from server-side secret file. Password hashing:
+Users register with email + password (minimum 14 characters). Password hashing:
 Argon2id using Spring Security's maintained encoder with parameters
 calibrated so verification is approximately 250-500ms on production
-hardware. Never hardcode Argon2 parameters without benchmark. Minimum
-password length 14; allow passphrases; no arbitrary composition rules.
+hardware. Never hardcode Argon2 parameters without benchmark. Allow passphrases; no arbitrary composition rules.
 
-No public registration. No email-based password reset in v1. Recovery is
+Optional bootstrap from a server-side secret file may create the first
+user on an empty database. No email-based password reset in v1. Recovery is
 a local administrative CLI/container command requiring host access and a
 new password secret file; it revokes all sessions.
 

@@ -181,11 +181,10 @@ class CategorizationAnalyticsIT extends AbstractIntegrationTest {
         assertThat(monthJson.get("timezone").asText()).isEqualTo("Europe/Lisbon");
         JsonNode eur = monthJson.get("totalsByCurrency").get(0);
         assertThat(eur.get("currency").asText()).isEqualTo("EUR");
-        assertThat(eur.get("income").asText()).isEqualTo("0.00");
-        assertThat(eur.get("expenses").asText()).isEqualTo("30.99");
+        assertThat(eur.get("income").asText()).isEqualTo("33.00");
+        assertThat(eur.get("expenses").asText()).isEqualTo("63.99");
         assertThat(eur.get("savings").asText()).isEqualTo("-30.99");
-        assertThat(eur.get("savingsRate").isNull()).isTrue();
-        assertThat(eur.get("savingsRateReason").asText()).isEqualTo("NO_POSITIVE_INCOME");
+        assertThat(eur.get("savingsRate").asText()).isEqualTo("-93.91");
 
         MvcResult summary = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/analytics/summary")
                         .header("Authorization", "Bearer " + token))

@@ -1,7 +1,6 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:worthly_mobile/api/csv_export.dart';
 import 'package:worthly_mobile/api/models.dart';
 import 'package:worthly_mobile/api/worthly_client.dart';
 import 'package:worthly_mobile/features/auth/auth_config.dart';
@@ -84,15 +83,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _export() async {
     try {
-      final bytes = await ref.read(worthlyClientProvider).bytes('/exports/transactions.csv');
-      final file = File('${Directory.systemTemp.path}/worthly-transactions.csv');
-      await file.writeAsBytes(bytes);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved ${file.path}')));
-      }
+      await shareTransactionsCsv(ref.read(worthlyClientProvider));
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export failed')));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not download the CSV. Try again.')));
       }
     }
   }
@@ -202,8 +196,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                           TextButton(
                             onPressed: () async {
-                              await ref.read(worthlyClientProvider).send('POST', '/notifications/${item.id}/read');
-                              ref.invalidate(shellDataProvider);
+                              try {
+                                await ref.read(worthlyClientProvider).send('POST', '/notifications/${item.id}/read');
+                                ref.invalidate(shellDataProvider);
+                              } catch (_) {
+                                /* Keep the inbox usable if the mark-read call fails. */
+                              }
                             },
                             child: const Text('Mark read'),
                           ),

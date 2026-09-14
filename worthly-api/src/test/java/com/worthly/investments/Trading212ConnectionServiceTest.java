@@ -7,10 +7,12 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.worthly.audit.application.AuditService;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionEntity;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionRepository;
-import com.worthly.identity.adapter.out.persistence.AppUserEntity;
-import com.worthly.identity.adapter.out.persistence.AppUserRepository;
+import com.worthly.infrastructure.config.WorthlyProperties;
+import com.worthly.infrastructure.crypto.PayloadCrypto;
 import com.worthly.investments.application.Trading212ConnectionService;
 import com.worthly.investments.application.Trading212Gateway;
 import com.worthly.investments.application.Trading212Models;
@@ -30,9 +32,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class Trading212ConnectionServiceTest {
 
     @Mock
-    AppUserRepository users;
-
-    @Mock
     ProviderConnectionRepository connections;
 
     @Mock
@@ -41,74 +40,91 @@ class Trading212ConnectionServiceTest {
     @Mock
     NotificationService notifications;
 
+    @Mock
+    PayloadCrypto crypto;
+
+    @Mock
+    AuditService audit;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @Test
     void missingSecretsMarkExistingConnectionConfigurationRequired() {
         UUID userId = UUID.randomUUID();
-        AppUserEntity owner = new AppUserEntity();
-        owner.setId(userId);
         ProviderConnectionEntity existing = new ProviderConnectionEntity();
         existing.setUserId(userId);
         existing.setProvider("TRADING_212");
         existing.setStatus("ACTIVE");
-        when(users.count()).thenReturn(1L);
-        when(users.findAll()).thenReturn(List.of(owner));
-        when(connections.findByUserIdAndProvider(userId, "TRADING_212")).thenReturn(Optional.of(existing));
+        when(connections.findByProvider("TRADING_212")).thenReturn(List.of(existing));
         when(gateway.credentialsPresent()).thenReturn(false);
         when(connections.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Trading212ConnectionService service =
-                new Trading212ConnectionService(users, connections, gateway, notifications);
-        Optional<ProviderConnectionEntity> result = service.reconcile();
+        service().reconcile();
 
-        assertThat(result).isPresent();
-        assertThat(result.get().getStatus()).isEqualTo("CONFIGURATION_REQUIRED");
+        assertThat(existing.getStatus()).isEqualTo("CONFIGURATION_REQUIRED");
         verify(notifications).remind(userId, "CONFIGURATION_REQUIRED");
         verify(gateway, never()).accountSummary();
     }
 
     @Test
-    void presentSecretsUpsertActiveConnection() {
+    void connectUpsertsActiveConnection() {
         UUID userId = UUID.randomUUID();
-        AppUserEntity owner = new AppUserEntity();
-        owner.setId(userId);
-        when(users.count()).thenReturn(1L);
-        when(users.findAll()).thenReturn(List.of(owner));
         when(connections.findByUserIdAndProvider(userId, "TRADING_212")).thenReturn(Optional.empty());
-        when(gateway.credentialsPresent()).thenReturn(true);
         when(gateway.accountSummary())
                 .thenReturn(new Trading212Models.AccountSummary("1", "EUR", BigDecimal.ONE, BigDecimal.TEN, Instant.now()));
+        when(crypto.encryptUtf8(any())).thenReturn(new byte[] {1, 2, 3});
         when(connections.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Trading212ConnectionService service =
-                new Trading212ConnectionService(users, connections, gateway, notifications);
-        ProviderConnectionEntity saved = service.reconcile().orElseThrow();
+        ProviderConnectionEntity saved = service().connect(userId, "key", "secret", "LIVE");
 
         assertThat(saved.getProvider()).isEqualTo("TRADING_212");
         assertThat(saved.getStatus()).isEqualTo("ACTIVE");
+        assertThat(saved.getCredentialsEncrypted()).isEqualTo(new byte[] {1, 2, 3});
         ArgumentCaptor<ProviderConnectionEntity> captor = ArgumentCaptor.forClass(ProviderConnectionEntity.class);
         verify(connections).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("ACTIVE");
+        verify(audit).record(eq(userId), eq("TRADING_212_CONNECTED"), any());
         verify(notifications, never()).remind(eq(userId), eq("CONFIGURATION_REQUIRED"));
+    }
+
+    @Test
+    void liveUnauthorizedDoesNotFallBackToPracticeHost() {
+        UUID userId = UUID.randomUUID();
+        when(connections.findByUserIdAndProvider(userId, "TRADING_212")).thenReturn(Optional.empty());
+        when(gateway.accountSummary()).thenThrow(new Trading212Gateway.ProviderException(401, "provider_unauthorized"));
+        when(crypto.encryptUtf8(any())).thenReturn(new byte[] {1, 2, 3});
+        when(connections.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        WorthlyProperties properties = new WorthlyProperties();
+        properties.getTrading212().setBaseUrl("https://live.trading212.com/api/v0");
+        Trading212ConnectionService service = new Trading212ConnectionService(
+                connections, gateway, notifications, crypto, objectMapper, audit, properties);
+
+        ProviderConnectionEntity saved = service.connect(userId, "key", "secret", "LIVE");
+
+        assertThat(saved.getStatus()).isEqualTo("ERROR");
+        verify(gateway, org.mockito.Mockito.times(1)).accountSummary();
     }
 
     @Test
     void unauthorizedCredentialsBecomeError() {
         UUID userId = UUID.randomUUID();
-        AppUserEntity owner = new AppUserEntity();
-        owner.setId(userId);
         ProviderConnectionEntity existing = new ProviderConnectionEntity();
         existing.setUserId(userId);
         existing.setProvider("TRADING_212");
         existing.setStatus("ACTIVE");
-        when(users.count()).thenReturn(1L);
-        when(users.findAll()).thenReturn(List.of(owner));
         when(connections.findByUserIdAndProvider(userId, "TRADING_212")).thenReturn(Optional.of(existing));
-        when(gateway.credentialsPresent()).thenReturn(true);
         when(gateway.accountSummary()).thenThrow(new Trading212Gateway.ProviderException(401, "provider_unauthorized"));
+        when(crypto.encryptUtf8(any())).thenReturn(new byte[] {9});
         when(connections.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        Trading212ConnectionService service =
-                new Trading212ConnectionService(users, connections, gateway, notifications);
-        assertThat(service.reconcile().orElseThrow().getStatus()).isEqualTo("ERROR");
+        assertThat(service().connect(userId, "key", "secret", "LIVE").getStatus()).isEqualTo("ERROR");
+    }
+
+    private Trading212ConnectionService service() {
+        WorthlyProperties properties = new WorthlyProperties();
+        properties.getTrading212().setBaseUrl("https://t212.test/api/v0");
+        return new Trading212ConnectionService(
+                connections, gateway, notifications, crypto, objectMapper, audit, properties);
     }
 }

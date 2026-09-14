@@ -2,6 +2,7 @@ package com.worthly.connections.adapter.out.enablebanking;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.worthly.connections.application.EnableBankingAuthSupport;
 import com.worthly.connections.application.EnableBankingGateway;
 import com.worthly.connections.application.EnableBankingModels;
 import com.worthly.infrastructure.config.WorthlyProperties;
@@ -11,7 +12,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -46,7 +50,9 @@ public class EnableBankingRestClient implements EnableBankingGateway {
 
     @Override
     public List<EnableBankingModels.DiscoveredBank> listAspsps(String country) {
-        JsonNode root = get("/aspsps", "country", country, "psu_type", "personal");
+        JsonNode root = (country == null || country.isBlank() || "*".equals(country))
+                ? get("/aspsps", "psu_type", "personal")
+                : get("/aspsps", "country", country, "psu_type", "personal");
         List<EnableBankingModels.DiscoveredBank> banks = new ArrayList<>();
         for (JsonNode node : root.path("aspsps")) {
             banks.add(new EnableBankingModels.DiscoveredBank(
@@ -59,20 +65,41 @@ public class EnableBankingRestClient implements EnableBankingGateway {
     }
 
     @Override
+    public Optional<ApplicationInfo> application() {
+        try {
+            JsonNode root = get("/application");
+            List<String> urls = new ArrayList<>();
+            for (JsonNode node : root.path("redirect_urls")) {
+                if (node.isTextual() && !node.asText().isBlank()) {
+                    urls.add(node.asText());
+                }
+            }
+            return Optional.of(new ApplicationInfo(List.copyOf(urls), text(root, "environment")));
+        } catch (ProviderException | RateLimitedException ex) {
+            log.info("Enable Banking /application unavailable; skipping redirect check");
+            return Optional.empty();
+        }
+    }
+
+    @Override
     public EnableBankingModels.AuthStart startAuthorization(
             String aspspName, String country, String state, Instant validUntil) {
-        String body =
-                """
-                {"access":{"balances":true,"transactions":true,"valid_until":"%s"},\
-                "aspsp":{"name":%s,"country":%s},"state":%s,"redirect_url":%s,"psu_type":"personal"}
-                """
-                        .formatted(
-                                validUntil.toString(),
-                                jsonString(aspspName),
-                                jsonString(country),
-                                jsonString(state),
-                                jsonString(properties.getCallbackUrl()));
-        JsonNode root = post("/auth", body);
+        String validUntilText = EnableBankingAuthSupport.rfc3339Utc(validUntil);
+        log.info("Enable Banking /auth aspsp={} country={} validUntil={}", aspspName, country, validUntilText);
+        Map<String, Object> access = new LinkedHashMap<>();
+        access.put("balances", true);
+        access.put("transactions", true);
+        access.put("valid_until", validUntilText);
+        Map<String, Object> aspsp = new LinkedHashMap<>();
+        aspsp.put("name", aspspName);
+        aspsp.put("country", country);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("access", access);
+        body.put("aspsp", aspsp);
+        body.put("state", state);
+        body.put("redirect_url", properties.getCallbackUrl());
+        body.put("psu_type", "personal");
+        JsonNode root = post("/auth", writeJson(body));
         return new EnableBankingModels.AuthStart(
                 text(root, "url"), Instant.now().plus(properties.getAuthorizationTtl()));
     }
@@ -156,28 +183,7 @@ public class EnableBankingRestClient implements EnableBankingGateway {
     }
 
     private EnableBankingModels.ProviderTransaction toTransaction(JsonNode node) {
-        JsonNode amount = node.path("transaction_amount");
-        String description = null;
-        if (node.path("remittance_information").isArray() && node.path("remittance_information").size() > 0) {
-            description = node.path("remittance_information").get(0).asText();
-        }
-        if (description == null || description.isBlank()) {
-            description = text(node, "note");
-        }
-        String counterparty = firstNonBlank(
-                node.path("creditor").path("name").asText(null), node.path("debtor").path("name").asText(null));
-        return new EnableBankingModels.ProviderTransaction(
-                emptyToNull(text(node, "transaction_id")),
-                emptyToNull(text(node, "entry_reference")),
-                text(node, "credit_debit_indicator"),
-                text(node, "status"),
-                decimal(amount, "amount"),
-                text(amount, "currency"),
-                localDate(node, "booking_date"),
-                localDate(node, "value_date"),
-                description,
-                counterparty,
-                node.toString());
+        return EnableBankingTransactionMapper.from(node);
     }
 
     private JsonNode get(String path, String... query) {
@@ -227,18 +233,33 @@ public class EnableBankingRestClient implements EnableBankingGateway {
         }
     }
 
+    private String writeJson(Map<String, Object> body) {
+        try {
+            return objectMapper.writeValueAsString(body);
+        } catch (Exception ex) {
+            throw new ProviderException(500, "provider_error");
+        }
+    }
+
     private void handleError(RestClientResponseException ex, String path) {
         int status = ex.getStatusCode().value();
-        log.info("Enable Banking {} returned status {}", path, status);
         String code = "provider_error";
+        String message = "";
         try {
             JsonNode node = objectMapper.readTree(ex.getResponseBodyAsString());
             if (node.hasNonNull("error")) {
                 code = node.get("error").asText();
             }
+            if (node.hasNonNull("message")) {
+                message = node.get("message").asText();
+                if (message.length() > 240) {
+                    message = message.substring(0, 240);
+                }
+            }
         } catch (Exception ignored) {
-            // never log provider bodies
+            // never log raw provider bodies
         }
+        log.info("Enable Banking {} returned status {} error={} message={}", path, status, code, message);
         if (status == 429 || "ASPSP_RATE_LIMIT_EXCEEDED".equals(code)) {
             String retryAfter =
                     ex.getResponseHeaders() == null ? null : ex.getResponseHeaders().getFirst("Retry-After");

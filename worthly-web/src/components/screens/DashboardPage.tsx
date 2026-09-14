@@ -6,9 +6,9 @@ import { CurrencyTabs, EmptyState } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
 import { areaPath, linePath, toChartNumber } from "@/lib/chart";
-import { formatAmount, formatRate, formatSignedAmount } from "@/lib/money";
+import { addAmounts, formatAmount, formatRate, formatSignedAmount } from "@/lib/money";
 import { formatDay, formatMonthLabel, monthDateRange, monthKeyInZone, previousMonthKeys } from "@/lib/period";
-import type { Account, MonthlyAnalytics, TransactionPage, WealthSummary } from "@/lib/types";
+import type { Account, InvestmentSummary, MonthlyAnalytics, TransactionPage, WealthSummary } from "@/lib/types";
 
 const CAT_COLORS = ["#0E4A3E", "#2C6B5C", "#4A8878", "#C98F32", "#B8BFBC"];
 
@@ -17,6 +17,7 @@ type ExpenseRow = { name: string; amount: string; currency: string };
 export function DashboardPage() {
   const { owner, privacy, connections, notifications, categories } = useAppData();
   const [wealth, setWealth] = useState<WealthSummary | null>(null);
+  const [investments, setInvestments] = useState<InvestmentSummary | null>(null);
   const [months, setMonths] = useState<MonthlyAnalytics[]>([]);
   const [recent, setRecent] = useState<TransactionPage | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -32,16 +33,18 @@ export function DashboardPage() {
     let cancelled = false;
     Promise.all([
       apiGet<WealthSummary>("/analytics/summary"),
+      apiGet<InvestmentSummary>("/investments/summary").catch(() => ({ totalsByCurrency: [], observedAt: null })),
       Promise.all(keys.map((key) => apiGet<MonthlyAnalytics>(`/analytics/monthly?month=${key}`))),
       apiGet<TransactionPage>("/transactions?size=5"),
       apiGet<Account[]>("/accounts"),
       apiGet<TransactionPage>(`/transactions?economicType=EXPENSE&from=${from}&to=${to}&size=200`),
     ])
-      .then(([nextWealth, nextMonths, nextRecent, nextAccounts, nextExpenses]) => {
+      .then(([nextWealth, nextInvestments, nextMonths, nextRecent, nextAccounts, nextExpenses]) => {
         if (cancelled) {
           return;
         }
         setWealth(nextWealth);
+        setInvestments(nextInvestments);
         setMonths(nextMonths);
         setRecent(nextRecent);
         setAccounts(nextAccounts);
@@ -61,6 +64,10 @@ export function DashboardPage() {
 
   const currencies = wealth?.totalsByCurrency.map((row) => row.currency) ?? [];
   const wealthRow = wealth?.totalsByCurrency.find((row) => row.currency === currency);
+  const investmentRow = investments?.totalsByCurrency.find((row) => row.currency === currency);
+  const brokerageCash = investmentRow?.cash ?? "0.00";
+  const cashAvailable = wealthRow ? addAmounts(wealthRow.liquidCash, brokerageCash) : "0.00";
+  const portfolioValue = investmentRow?.portfolioValue ?? wealthRow?.investmentValue ?? "0.00";
   const monthlyNow = months.find((item) => item.month === month)?.totalsByCurrency.find((row) => row.currency === currency);
   const savingsSeries = months.map((item) => {
     const row = item.totalsByCurrency.find((entry) => entry.currency === currency);
@@ -106,9 +113,9 @@ export function DashboardPage() {
 
   const maxCat = categoryRows[0]?.amount ?? "0";
   const liquidAccounts = accounts.filter((account) => account.includedInLiquidCash && account.currency === currency);
-  const providers = new Set(liquidAccounts.map((account) => account.provider)).size;
   const reauth = notifications.find((item) => item.readAt == null && item.type === "CONNECTION_REAUTH_REQUIRED");
   const reauthConnection = connections.find((connection) => connection.status === "REAUTH_REQUIRED");
+  const hasBank = connections.some((connection) => connection.provider === "ENABLE_BANKING");
 
   if (loadError) {
     return <EmptyState title="Dashboard unavailable">{loadError}</EmptyState>;
@@ -143,10 +150,13 @@ export function DashboardPage() {
         <div style={{ background: "var(--pine)", borderRadius: 16, padding: 24, color: "var(--cream)", display: "flex", flexDirection: "column" }}>
           <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>Cash available now</div>
           <div className="serif tabular" style={{ fontSize: 56, lineHeight: 1, marginTop: 10 }}>
-            {formatAmount(wealthRow.liquidCash, currency, privacy)}
+            {formatAmount(cashAvailable, currency, privacy)}
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(244,241,234,.62)", marginTop: 8 }}>
-            Across {liquidAccounts.length} account{liquidAccounts.length === 1 ? "" : "s"} · {providers} provider{providers === 1 ? "" : "s"} · excludes investments · {currency}
+            {liquidAccounts.length} bank account{liquidAccounts.length === 1 ? "" : "s"}
+            {addAmounts(brokerageCash, "0.00") !== "0.00" ? " · includes Trading 212 cash" : ""}
+            {" · stocks shown under Invested · "}
+            {currency}
           </div>
           <div style={{ display: "flex", gap: 28, marginTop: "auto", paddingTop: 22, borderTop: "1px solid rgba(244,241,234,.16)" }}>
             <div>
@@ -169,7 +179,7 @@ export function DashboardPage() {
             <div>
               <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>Invested</div>
               <div className="serif tabular" style={{ fontSize: 27, lineHeight: 1.1, marginTop: 5, color: "#E8C382" }}>
-                {formatAmount(wealthRow.investmentValue, currency, privacy)}
+                {formatAmount(portfolioValue, currency, privacy)}
               </div>
             </div>
           </div>
@@ -222,7 +232,11 @@ export function DashboardPage() {
           <div className="label">Where it went · {formatMonthLabel(month)}</div>
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 13 }}>
             {categoryRows.length === 0 ? (
-              <p className="muted">No expenses in {currency} this month.</p>
+              <p className="muted">
+                {hasBank
+                  ? `No expenses in ${currency} this month.`
+                  : "Card and current-account purchases appear after you connect a bank. Trading 212 is investments only."}
+              </p>
             ) : (
               categoryRows.map((row, index) => (
                 <div key={row.name}>
@@ -276,10 +290,14 @@ export function DashboardPage() {
                     <span className="mono" style={{ width: 82, flex: "none", fontSize: 11.5, color: "var(--faint)" }}>
                       {formatDay(tx.reportingAt, owner.reportingTimezone)}
                     </span>
-                    <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {tx.merchant || tx.description || "Transaction"}
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {tx.merchant || tx.description || "Transaction"}
+                      </span>
+                      <span style={{ display: "block", fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {[category?.label ?? "Uncategorized", tx.location].filter(Boolean).join(" · ")}
+                      </span>
                     </span>
-                    <span style={{ width: 140, flex: "none", fontSize: 12, color: "var(--faint)" }}>{category?.label ?? "Uncategorized"}</span>
                     <span className="mono tabular" style={{ width: 110, flex: "none", textAlign: "right", fontSize: 13, color: credit ? "var(--gain)" : "var(--ink)" }}>
                       {credit ? formatSignedAmount(tx.money.amount, tx.money.currency, privacy) : formatAmount(tx.money.amount.startsWith("-") ? tx.money.amount : `-${tx.money.amount}`, tx.money.currency, privacy)}
                     </span>

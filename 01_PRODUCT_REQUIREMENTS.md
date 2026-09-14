@@ -9,7 +9,7 @@ distribution, recent movements and connection health.
 
 ## Actors
 
--   **Owner:** the only human user in v1.
+-   **Owner:** a registered human user. Each user is an isolated tenant.
 -   **Worthly Scheduler:** background synchronization.
 -   **Enable Banking:** AIS aggregator for Santander Portugal and
     Revolut.
@@ -24,8 +24,12 @@ distribution, recent movements and connection health.
     `reporting_timezone` defaults to `Europe/Lisbon` and
     `reporting_currency` defaults to `EUR`.
 -   **FR-001** No anonymous financial endpoint.
--   **FR-002** Exactly one owner is supported in v1.
--   **FR-003** No public registration endpoint exists.
+-   **FR-002** Each registered user is an isolated tenant. Domain rows
+    are scoped by `user_id`.
+-   **FR-003** Public `POST /api/v1/register` creates a user. Duplicate
+    email returns 409 `email_taken`. Password minimum is 14 characters,
+    hashed with Argon2. Registration does not issue tokens; the user
+    then signs in via OAuth.
 -   **FR-004** Owner can view and revoke active mobile/device sessions.
 -   **FR-005** Web logout invalidates its server session.
 -   **FR-006** Mobile uses Authorization Code + PKCE and refresh-token
@@ -46,14 +50,16 @@ distribution, recent movements and connection health.
 -   **FR-012** Complete callback only when state is valid, unexpired and
     owner-bound.
 -   **FR-013** Disconnect and purge follow FR-017.
--   **FR-014** Trading 212 credentials are configured server-side, not
-    entered into browser/mobile.
--   **FR-016** At startup/configuration reconciliation, presence of a
-    valid server-side Trading 212 API key + secret MUST create or upsert
-    exactly one owner `TRADING_212` provider connection. Provider secrets
-    are never stored in `provider_connection`. Missing/invalid
-    configuration yields `CONFIGURATION_REQUIRED`; it does not silently
-    delete historical connection/data.
+-   **FR-014** Trading 212 read-only API key and secret are entered in
+    the web or mobile Connections screen. Worthly encrypts them at rest
+    in `provider_connection.credentials_encrypted`. Secrets never appear
+    in API responses, logs, or audit metadata.
+-   **FR-016** Users connect Trading 212 from the app
+    (`POST /connections/trading-212`). Startup reconciliation does not
+    auto-create a connection from server env. Missing per-connection
+    credentials yield `CONFIGURATION_REQUIRED` and do not delete
+    historical data. Optional server env keys remain a local/IT fallback
+    only.
 -   **FR-015** Manual sync request is asynchronous and returns a
     sync-run resource.
 

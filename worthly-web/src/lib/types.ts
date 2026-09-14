@@ -67,6 +67,7 @@ export type Transaction = {
   money: { amount: string; currency: string };
   merchant: string | null;
   description: string | null;
+  location: string | null;
   reportingAt: string;
   categoryId: string | null;
   notes: string | null;

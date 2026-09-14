@@ -38,11 +38,9 @@ sensitive details and is optional; app remains functional without it.
 
 ## Trading 212 connection source of truth
 
-Trading 212 is configuration-backed rather than consent-backed.
-Server-side presence of the required read-only API key + secret drives
-creation/upsert of the owner's single `TRADING_212` connection. Secrets
-remain outside the connection row. Missing configuration preserves
-historical data and marks the connection `CONFIGURATION_REQUIRED`.
+Trading 212 is connected from the apps with a read-only API key + secret.
+Worthly encrypts the pair on the connection row. Missing credentials
+preserve historical data and mark the connection `CONFIGURATION_REQUIRED`.
 
 ## Provider connection status
 
@@ -51,5 +49,6 @@ Canonical v4 statuses:
 `DISABLED`.
 
 `REAUTH_REQUIRED` is primarily consent/SCA lifecycle state.
-`CONFIGURATION_REQUIRED` means server-side provider configuration is
-missing or invalid and requires operator/owner configuration.
+`CONFIGURATION_REQUIRED` means provider credentials or configuration are
+missing or invalid and must be completed from the app (or, for local/IT
+fallback, operator configuration).

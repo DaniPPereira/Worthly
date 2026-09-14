@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:worthly_mobile/features/auth/auth_config.dart';
 import 'package:worthly_mobile/features/session/session.dart';
+import 'package:worthly_mobile/screens/register_screen.dart';
 import 'package:worthly_mobile/theme/colors.dart';
 import 'package:worthly_mobile/theme/theme.dart';
 import 'package:worthly_mobile/widgets/rising_w.dart';
@@ -85,9 +86,32 @@ class SignInScreen extends ConsumerWidget {
                   child: const Text('Sign in', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
                 ),
               ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 54,
+                child: OutlinedButton(
+                  onPressed: () async {
+                    final created = await Navigator.of(context).push<bool>(
+                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                    );
+                    if (created == true && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Account created. Sign in to continue.')),
+                      );
+                    }
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: WorthlyColors.pine,
+                    side: const BorderSide(color: WorthlyColors.pine),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text('Create an account', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                ),
+              ),
               const Spacer(),
               const Text(
-                'Worthly holds no funds and cannot move money. Provider access is read-only. Sign-in uses Authorization Code + PKCE in the system browser — this app never collects your password.',
+                'Create an account here if you need one. Sign-in uses Authorization Code + PKCE in the system browser.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11, height: 1.5, color: WorthlyColors.faint),
               ),

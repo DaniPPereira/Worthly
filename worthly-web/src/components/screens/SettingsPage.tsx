@@ -46,8 +46,12 @@ export function SettingsPage() {
   }
 
   async function markRead(id: string) {
-    await apiSend("POST", `/notifications/${id}/read`);
-    await refresh();
+    try {
+      await apiSend("POST", `/notifications/${id}/read`);
+      await refresh();
+    } catch {
+      // Keep the inbox usable if the mark-read call fails.
+    }
   }
 
   const unread = notifications.filter((item) => item.readAt == null);
@@ -135,7 +139,7 @@ export function SettingsPage() {
       </Group>
 
       <Group title="Data">
-        <button type="button" onClick={() => void downloadCsv("/exports/transactions.csv", "transactions.csv")} style={rowButton}>
+        <button type="button" onClick={() => void downloadCsv("/exports/transactions.csv", "transactions.csv").catch(() => undefined)} style={rowButton}>
           <span>
             <span style={{ display: "block", fontWeight: 500, fontSize: 13.5 }}>Export transactions</span>
             <span style={{ display: "block", fontSize: 11.5, color: "var(--faint)", marginTop: 2 }}>Normalized CSV</span>

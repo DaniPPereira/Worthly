@@ -62,3 +62,9 @@ export function monthDateRange(monthKey: string): { from: string; to: string } {
     to: `${monthKey}-${last.toString().padStart(2, "0")}`,
   };
 }
+
+export function shiftMonthKey(monthKey: string, delta: number): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear().toString().padStart(4, "0")}-${(date.getUTCMonth() + 1).toString().padStart(2, "0")}`;
+}

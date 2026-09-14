@@ -3,6 +3,7 @@ package com.worthly.connections.adapter.in.web;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionEntity;
 import com.worthly.connections.application.ConnectionService;
 import com.worthly.connections.application.EnableBankingModels;
+import com.worthly.investments.application.Trading212ConnectionService;
 import com.worthly.sync.adapter.out.persistence.SyncRunEntity;
 import com.worthly.sync.application.ConnectionSyncFacade;
 import jakarta.validation.Valid;
@@ -35,10 +36,15 @@ public class ConnectionController {
 
     private final ConnectionService connectionService;
     private final ConnectionSyncFacade syncService;
+    private final Trading212ConnectionService trading212Connections;
 
-    public ConnectionController(ConnectionService connectionService, ConnectionSyncFacade syncService) {
+    public ConnectionController(
+            ConnectionService connectionService,
+            ConnectionSyncFacade syncService,
+            Trading212ConnectionService trading212Connections) {
         this.connectionService = connectionService;
         this.syncService = syncService;
+        this.trading212Connections = trading212Connections;
     }
 
     @GetMapping
@@ -51,6 +57,13 @@ public class ConnectionController {
     @GetMapping("/banks")
     public List<BankChoiceResponse> banks(@RequestParam(defaultValue = "PT") String country) {
         return connectionService.listBanks(country).stream().map(BankChoiceResponse::from).toList();
+    }
+
+    @PostMapping("/trading-212")
+    public ConnectionResponse connectTrading212(
+            @AuthenticationPrincipal Jwt jwt, @Valid @RequestBody Trading212ConnectRequest request) {
+        return ConnectionResponse.from(trading212Connections.connect(
+                UUID.fromString(jwt.getSubject()), request.apiKey(), request.apiSecret(), request.environment()));
     }
 
     @PostMapping("/enable-banking/authorize")
@@ -138,6 +151,11 @@ public class ConnectionController {
 
     public record BankAuthorizationRequest(
             @NotBlank String name, @Size(min = 2, max = 2) String country, @NotBlank String returnClient) {}
+
+    public record Trading212ConnectRequest(
+            @NotBlank @Size(max = 256) String apiKey,
+            @NotBlank @Size(max = 256) String apiSecret,
+            @Size(max = 8) String environment) {}
 
     public record AuthorizationRedirectResponse(String url, Instant expiresAt) {}
 

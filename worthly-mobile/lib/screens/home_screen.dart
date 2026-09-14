@@ -48,6 +48,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final range = Period.monthRange(month);
       final keys = Period.previousMonths(owner.reportingTimezone, 6);
       final wealth = await client.get('/analytics/summary', parseWealth);
+      InvestmentSummary? investments;
+      try {
+        investments = await client.get('/investments/summary', parseInvestments);
+      } catch (_) {
+        investments = null;
+      }
       final months = await Future.wait(keys.map((key) => client.get('/analytics/monthly?month=$key', parseMonthly)));
       final recent = await client.get('/transactions?size=5', parseTxPage);
       final expenses = await client.get(
@@ -59,7 +65,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
       final first = wealth.totalsByCurrency.isEmpty ? owner.reportingCurrency : wealth.totalsByCurrency.first.currency;
       setState(() {
-        _model = _HomeModel(wealth: wealth, months: months, recent: recent, expenses: expenses);
+        _model = _HomeModel(
+          wealth: wealth,
+          investments: investments,
+          months: months,
+          recent: recent,
+          expenses: expenses,
+        );
         _currency = wealth.totalsByCurrency.any((row) => row.currency == _currency) ? _currency : first;
         _error = null;
       });
@@ -101,9 +113,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final month = Period.monthKey(owner.reportingTimezone);
     final monthly = model.months.where((item) => item.month == month).firstOrNull?.totalsByCurrency.where((item) => item.currency == currency).firstOrNull;
     final liquid = (shell?.accounts ?? []).where((item) => item.includedInLiquidCash && item.currency == currency).toList();
-    final providers = liquid.map((item) => item.provider).toSet().length;
+    final investmentRow = model.investments?.totalsByCurrency.where((item) => item.currency == currency).firstOrNull;
+    final brokerageCash = investmentRow?.cash ?? '0.00';
+    final cashAvailable = MoneyFmt.add(row.liquidCash, brokerageCash);
+    final hasBrokerageCash = MoneyFmt.cents(brokerageCash) != BigInt.zero;
     final reauth = shell?.notifications.where((item) => item.readAt == null && item.type == 'CONNECTION_REAUTH_REQUIRED').firstOrNull;
     final reauthConnection = shell?.connections.where((item) => item.status == 'REAUTH_REQUIRED').firstOrNull;
+    final hasBank = shell?.connections.any((item) => item.provider == 'ENABLE_BANKING') ?? false;
     final categoryRows = _categoryRows(model.expenses.items, shell?.categories ?? [], currency);
     final maxCat = categoryRows.isEmpty ? BigInt.zero : categoryRows.first.cents;
     return ListView(
@@ -135,12 +151,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               Text('CASH AVAILABLE NOW', style: labelStyle(color: WorthlyColors.cream.withValues(alpha: 0.6))),
               const SizedBox(height: 8),
-              Text(MoneyFmt.amount(row.liquidCash, row.currency, privacy: privacy), style: serif(size: 46)),
+              Text(MoneyFmt.amount(cashAvailable, row.currency, privacy: privacy), style: serif(size: 46)),
               const SizedBox(height: 6),
               Text(
-                liquid.isEmpty
-                    ? 'Excludes investments · ${row.currency}'
-                    : 'Across ${liquid.length} accounts · $providers providers · excludes investments',
+                [
+                  '${liquid.length} bank account${liquid.length == 1 ? '' : 's'}',
+                  if (hasBrokerageCash) 'includes Trading 212 cash',
+                  'stocks shown under Invested',
+                  row.currency,
+                ].join(' · '),
                 style: TextStyle(fontSize: 12, color: WorthlyColors.cream.withValues(alpha: 0.62)),
               ),
               const SizedBox(height: 16),
@@ -217,7 +236,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Text('WHERE IT WENT · ${Period.monthLabel(month).toUpperCase()}', style: labelStyle()),
               const SizedBox(height: 14),
               if (categoryRows.isEmpty)
-                const Text('No expenses in this currency this month.', style: TextStyle(fontSize: 13, color: WorthlyColors.muted))
+                Text(
+                  hasBank
+                      ? 'No expenses in this currency this month.'
+                      : 'Card and current-account purchases appear after you connect a bank. Trading 212 is investments only.',
+                  style: const TextStyle(fontSize: 13, color: WorthlyColors.muted),
+                )
               else
                 for (var i = 0; i < categoryRows.length; i++) ...[
                   Row(
@@ -341,7 +365,10 @@ class _TxLine extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(tx.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
-                Text('$category · ${Period.day(tx.reportingAt, owner.reportingTimezone)}', style: const TextStyle(fontSize: 11.5, color: WorthlyColors.faint)),
+                Text(
+                  [category, if (tx.location != null && tx.location!.isNotEmpty) tx.location, Period.day(tx.reportingAt, owner.reportingTimezone)].join(' · '),
+                  style: const TextStyle(fontSize: 11.5, color: WorthlyColors.faint),
+                ),
               ],
             ),
           ),
@@ -356,9 +383,16 @@ class _TxLine extends StatelessWidget {
 }
 
 class _HomeModel {
-  const _HomeModel({required this.wealth, required this.months, required this.recent, required this.expenses});
+  const _HomeModel({
+    required this.wealth,
+    required this.investments,
+    required this.months,
+    required this.recent,
+    required this.expenses,
+  });
 
   final WealthSummary wealth;
+  final InvestmentSummary? investments;
   final List<MonthlyAnalytics> months;
   final TxPage recent;
   final TxPage expenses;

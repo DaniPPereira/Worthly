@@ -34,6 +34,10 @@ public class ProviderConnectionEntity {
     @Column(name = "external_session_id_encrypted", columnDefinition = "bytea")
     private byte[] externalSessionIdEncrypted;
 
+    @Column(name = "credentials_encrypted", columnDefinition = "bytea")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private byte[] credentialsEncrypted;
+
     @Column(name = "consent_expires_at")
     private Instant consentExpiresAt;
 
@@ -114,6 +118,14 @@ public class ProviderConnectionEntity {
 
     public void setExternalSessionIdEncrypted(byte[] externalSessionIdEncrypted) {
         this.externalSessionIdEncrypted = externalSessionIdEncrypted;
+    }
+
+    public byte[] getCredentialsEncrypted() {
+        return credentialsEncrypted;
+    }
+
+    public void setCredentialsEncrypted(byte[] credentialsEncrypted) {
+        this.credentialsEncrypted = credentialsEncrypted;
     }
 
     public Instant getConsentExpiresAt() {

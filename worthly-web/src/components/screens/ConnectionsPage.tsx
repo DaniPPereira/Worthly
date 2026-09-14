@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/ui/Primitives";
-import { apiGet, apiSend } from "@/lib/api";
+import { ApiError, apiGet, apiSend } from "@/lib/api";
 import { connectionLabel, statusTone, useAppData } from "@/lib/app-data";
 import { formatInstant } from "@/lib/period";
 import type { BankChoice, Connection, SyncRun, SyncRunPage } from "@/lib/types";
@@ -14,14 +14,25 @@ export function ConnectionsPage() {
   const { connections, refresh, syncing, owner } = useAppData();
   const searchParams = useSearchParams();
   const [banks, setBanks] = useState<BankChoice[]>([]);
+  const [banksError, setBanksError] = useState<string | null>(null);
   const [log, setLog] = useState<LogRow[]>([]);
   const [handoff, setHandoff] = useState<Connection | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmPurge, setConfirmPurge] = useState<Connection | null>(null);
+  const [t212Error, setT212Error] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
   const result = searchParams.get("status");
 
   useEffect(() => {
-    void apiGet<BankChoice[]>("/connections/banks?country=PT").then(setBanks).catch(() => setBanks([]));
+    void apiGet<BankChoice[]>("/connections/banks?country=PT")
+      .then((list) => {
+        setBanks(list);
+        setBanksError(null);
+      })
+      .catch((err: unknown) => {
+        setBanks([]);
+        setBanksError(err instanceof ApiError ? err.message : "provider_error");
+      });
   }, []);
 
   useEffect(() => {
@@ -47,13 +58,27 @@ export function ConnectionsPage() {
   }, [connections]);
 
   async function authorize(name: string, country: string) {
-    const start = await apiSend<{ url: string }>("POST", "/connections/enable-banking/authorize", {
-      name,
-      country,
-      returnClient: "WEB",
-    });
-    if (start?.url) {
-      window.location.assign(start.url);
+    setAuthError(null);
+    try {
+      const start = await apiSend<{ url: string }>("POST", "/connections/enable-banking/authorize", {
+        name,
+        country,
+        returnClient: "WEB",
+      });
+      if (start?.url) {
+        window.location.assign(start.url);
+      }
+    } catch (err: unknown) {
+      const code = err instanceof ApiError ? err.message : "provider_error";
+      if (code === "redirect_url_mismatch") {
+        setAuthError(
+          "The Enable Banking app redirect URL does not match Worthly. In the Enable Banking control panel it must be exactly http://localhost:8080/api/v1/connections/enable-banking/callback",
+        );
+      } else {
+        setAuthError(
+          "Enable Banking rejected the bank login start. Confirm the sandbox app redirect URL is http://localhost:8080/api/v1/connections/enable-banking/callback, then try Connect again.",
+        );
+      }
     }
   }
 
@@ -88,10 +113,29 @@ export function ConnectionsPage() {
     }
   }
 
+  async function connectTrading212(apiKey: string, apiSecret: string, environment: string) {
+    setBusyId("trading-212");
+    setT212Error(null);
+    try {
+      const connection = await apiSend<Connection>("POST", "/connections/trading-212", { apiKey, apiSecret, environment });
+      await refresh();
+      if (connection?.status === "ERROR") {
+        setT212Error(
+          "Trading 212 rejected those credentials. Use a read-only Live key from Trading 212 Invest (or Stocks ISA) and try again.",
+        );
+      }
+    } catch {
+      setT212Error("Could not connect Trading 212.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   const unusedBanks = useMemo(() => {
     const names = new Set(connections.map((item) => item.institutionName).filter(Boolean));
     return banks.filter((bank) => !names.has(bank.name));
   }, [banks, connections]);
+  const hasTrading212 = connections.some((item) => item.provider === "TRADING_212");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -106,7 +150,7 @@ export function ConnectionsPage() {
         </div>
       ) : null}
       {connections.length === 0 ? (
-        <EmptyState title="No providers yet">Connect Santander Portugal or Revolut through Enable Banking. Trading 212 is configured with a server-side read-only key.</EmptyState>
+        <EmptyState title="No providers yet">Connect Santander Portugal or Revolut through Enable Banking, or add Trading 212 with a read-only API key from this screen.</EmptyState>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
           {connections.map((connection) => (
@@ -119,21 +163,58 @@ export function ConnectionsPage() {
               onDisconnect={() => void disconnect(connection)}
               onPurge={() => setConfirmPurge(connection)}
               onReauth={() => setHandoff(connection)}
+              onSaveTrading212={
+                connection.provider === "TRADING_212" && (connection.status === "CONFIGURATION_REQUIRED" || connection.status === "ERROR")
+                  ? connectTrading212
+                  : undefined
+              }
+              t212Busy={busyId === "trading-212"}
+              t212Error={connection.provider === "TRADING_212" ? t212Error : null}
             />
           ))}
         </div>
       )}
-      {unusedBanks.length > 0 ? (
+      <div className="card" style={{ padding: 20 }}>
+        <div className="label">Connect a bank</div>
+        {unusedBanks.length > 0 ? (
+          <>
+            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              {unusedBanks.map((bank) => (
+                <button key={`${bank.country}-${bank.name}`} type="button" className="btn btn-primary" onClick={() => void authorize(bank.name, bank.country)}>
+                  Connect {bank.name}
+                </button>
+              ))}
+            </div>
+            {authError ? <p style={{ color: "var(--loss)", fontSize: 13, marginTop: 10, maxWidth: 640 }}>{authError}</p> : null}
+            <p className="muted" style={{ marginTop: 12 }}>Opens your bank in this browser. You confirm there — Worthly never sees your credentials.</p>
+          </>
+        ) : banksError === "configuration_required" ? (
+          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
+            Santander and Revolut are added here through Enable Banking (Open Banking). This server has no Enable Banking
+            application yet, so the bank buttons cannot appear. Create an app at enablebanking.com, put its application ID
+            and RSA private key on the API (`WORTHLY_ENABLE_BANKING_APPLICATION_ID` and `WORTHLY_ENABLE_BANKING_PRIVATE_KEY_FILE`),
+            restart Worthly, then refresh this page. You still log in at the bank — Worthly never sees that password.
+          </p>
+        ) : banksError ? (
+          <p className="muted" style={{ marginTop: 12 }}>
+            Banks could not be loaded ({banksError.replaceAll("_", " ")}). Try again after the API can reach Enable Banking.
+          </p>
+        ) : banks.length === 0 ? (
+          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
+            Enable Banking is configured, but this sandbox app did not return Santander or Revolut for Portugal.
+            Open the Mock ASPSP tab in the Enable Banking control panel, add a test bank, then refresh. Real Santander
+            and Revolut need a Production Enable Banking application.
+          </p>
+        ) : (
+          <p className="muted" style={{ marginTop: 12 }}>All supported banks for Portugal are already connected.</p>
+        )}
+      </div>
+      {!hasTrading212 ? (
         <div className="card" style={{ padding: 20 }}>
-          <div className="label">Connect a bank</div>
-          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-            {unusedBanks.map((bank) => (
-              <button key={`${bank.country}-${bank.name}`} type="button" className="btn btn-primary" onClick={() => void authorize(bank.name, bank.country)}>
-                Connect {bank.name}
-              </button>
-            ))}
-          </div>
-          <p className="muted" style={{ marginTop: 12 }}>Opens your bank in this browser. You confirm there — Worthly never sees your credentials.</p>
+          <div className="label">Connect Trading 212</div>
+          <p className="muted" style={{ marginTop: 8 }}>Paste a read-only Live API key from Trading 212 Invest (or Stocks ISA). Crypto is a separate Trading 212 account and is not included. Worthly encrypts the key on the server and keeps it until you replace it.</p>
+          {t212Error ? <p style={{ color: "var(--loss)", fontSize: 13, marginTop: 10 }}>{t212Error}</p> : null}
+          <Trading212Form busy={busyId === "trading-212"} onSubmit={connectTrading212} />
         </div>
       ) : null}
       <div className="card" style={{ padding: "20px 20px 8px" }}>
@@ -227,6 +308,9 @@ function ConnectionCard({
   onDisconnect,
   onPurge,
   onReauth,
+  onSaveTrading212,
+  t212Busy,
+  t212Error,
 }: {
   connection: Connection;
   timezone: string;
@@ -235,6 +319,9 @@ function ConnectionCard({
   onDisconnect: () => void;
   onPurge: () => void;
   onReauth: () => void;
+  onSaveTrading212?: (apiKey: string, apiSecret: string, environment: string) => Promise<void>;
+  t212Busy?: boolean;
+  t212Error?: string | null;
 }) {
   const tone = statusTone(connection.status);
   const name = connectionLabel(connection);
@@ -262,7 +349,7 @@ function ConnectionCard({
         <Row k="Last successful sync" v={formatInstant(connection.lastSuccessfulSyncAt, timezone)} />
         <Row
           k={consentLabel(connection)}
-          v={connection.consentExpiresAt ? formatInstant(connection.consentExpiresAt, timezone) : bank ? "—" : "Server secret"}
+          v={connection.consentExpiresAt ? formatInstant(connection.consentExpiresAt, timezone) : bank ? "—" : "Encrypted on server"}
           warn={needsAuth || connection.status === "CONFIGURATION_REQUIRED"}
         />
         <Row k="Access" v="Read-only" />
@@ -277,8 +364,12 @@ function ConnectionCard({
               Opens {name} in this browser. You confirm there — Worthly never sees your credentials.
             </div>
           </>
-        ) : connection.status === "CONFIGURATION_REQUIRED" ? (
-          <p className="muted">Set WORTHLY_T212_API_KEY and WORTHLY_T212_API_SECRET on the server. Credentials are never stored on this connection.</p>
+        ) : connection.status === "CONFIGURATION_REQUIRED" || (connection.provider === "TRADING_212" && connection.status === "ERROR" && onSaveTrading212) ? (
+          <>
+            {t212Error ? <p style={{ color: "var(--loss)", fontSize: 12, marginBottom: 8 }}>{t212Error}</p> : null}
+            <p className="muted">Add a read-only Trading 212 API key. Worthly encrypts it on the server.</p>
+            {onSaveTrading212 ? <Trading212Form busy={Boolean(t212Busy)} onSubmit={onSaveTrading212} /> : null}
+          </>
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
             {healthy || connection.status === "ERROR" ? (
@@ -343,4 +434,50 @@ function outcomeColor(status: string): string {
     return "var(--loss)";
   }
   return "var(--warn)";
+}
+
+function Trading212Form({
+  busy,
+  onSubmit,
+}: {
+  busy: boolean;
+  onSubmit: (apiKey: string, apiSecret: string, environment: string) => Promise<void>;
+}) {
+  const [apiKey, setApiKey] = useState("");
+  const [apiSecret, setApiSecret] = useState("");
+
+  return (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSubmit(apiKey, apiSecret, "LIVE").then(() => {
+          setApiKey("");
+          setApiSecret("");
+        });
+      }}
+      style={{ display: "grid", gap: 10, marginTop: 14 }}
+    >
+      <input
+        type="text"
+        autoComplete="off"
+        required
+        placeholder="API key"
+        value={apiKey}
+        onChange={(event) => setApiKey(event.target.value)}
+        style={{ height: 42, padding: "0 12px", borderRadius: 9, border: "1px solid rgba(19,26,25,.12)" }}
+      />
+      <input
+        type="password"
+        autoComplete="off"
+        required
+        placeholder="API secret"
+        value={apiSecret}
+        onChange={(event) => setApiSecret(event.target.value)}
+        style={{ height: 42, padding: "0 12px", borderRadius: 9, border: "1px solid rgba(19,26,25,.12)" }}
+      />
+      <button type="submit" className="btn btn-primary" style={{ height: 42 }} disabled={busy}>
+        Save read-only key
+      </button>
+    </form>
+  );
 }

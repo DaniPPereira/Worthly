@@ -286,6 +286,7 @@ public class BankingSyncService {
                         normalized.setCurrency(currency);
                         normalized.setDescription(tx.description());
                         normalized.setMerchant(tx.counterparty());
+                        normalized.setLocation(tx.location());
                         normalized.setReportingAt(bookedAt);
                         categorization.applyAutomatic(account.getUserId(), normalized);
                         transactions.save(normalized);
@@ -320,6 +321,7 @@ public class BankingSyncService {
         normalized.setCurrency(currency);
         normalized.setMerchant(tx.counterparty());
         normalized.setDescription(tx.description());
+        normalized.setLocation(tx.location());
         normalized.setReportingAt(bookedAt);
         normalized.setCategorizationSource("UNCATEGORIZED");
         categorization.applyAutomatic(account.getUserId(), normalized);

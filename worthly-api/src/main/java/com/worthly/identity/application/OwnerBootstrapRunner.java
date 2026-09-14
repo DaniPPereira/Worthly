@@ -47,13 +47,13 @@ public class OwnerBootstrapRunner implements ApplicationRunner {
     @Transactional
     public void run(ApplicationArguments args) {
         if (users.count() > 0) {
-            log.info("Owner already present; bootstrap skipped");
+            log.info("Users already present; bootstrap skipped");
             return;
         }
         String email = properties.getBootstrap().getEmail();
         String passwordFile = properties.getBootstrap().getPasswordFile();
         if (email == null || email.isBlank() || passwordFile == null || passwordFile.isBlank()) {
-            log.warn("No owner exists and bootstrap secrets are absent");
+            log.info("No users yet; public registration is available");
             return;
         }
         String password = readPassword(Path.of(passwordFile));
@@ -68,7 +68,7 @@ public class OwnerBootstrapRunner implements ApplicationRunner {
         owner.setReportingCurrency("EUR");
         users.saveAndFlush(owner);
         auditService.record(owner.getId(), "OWNER_BOOTSTRAP", Map.of("emailDomain", domainOf(email)));
-        log.info("Bootstrapped single owner account");
+        log.info("Bootstrapped initial owner account");
     }
 
     private static String readPassword(Path path) {

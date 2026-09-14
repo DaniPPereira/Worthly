@@ -25,7 +25,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: "Worthly",
-  description: "Private personal finance for one owner",
+  description: "Private personal finance",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.investments.application.RateLimitHeaders;
+import com.worthly.investments.application.Trading212CredentialContext;
 import com.worthly.investments.application.Trading212Gateway;
 import com.worthly.investments.application.Trading212Models;
 import java.math.BigDecimal;
@@ -39,7 +40,7 @@ public class Trading212RestClient implements Trading212Gateway {
 
     @Override
     public boolean credentialsPresent() {
-        return properties.credentialsPresent();
+        return Trading212CredentialContext.current() != null || properties.credentialsPresent();
     }
 
     @Override
@@ -144,7 +145,7 @@ public class Trading212RestClient implements Trading212Gateway {
     }
 
     private JsonNode get(String path) {
-        WorthlyProperties.Trading212.Credentials credentials = properties.credentials();
+        WorthlyProperties.Trading212.Credentials credentials = resolveCredentials();
         if (credentials == null) {
             throw new ProviderException(503, "configuration_required");
         }
@@ -172,11 +173,19 @@ public class Trading212RestClient implements Trading212Gateway {
         }
     }
 
+    private WorthlyProperties.Trading212.Credentials resolveCredentials() {
+        Trading212CredentialContext.Bound scoped = Trading212CredentialContext.current();
+        if (scoped != null) {
+            return new WorthlyProperties.Trading212.Credentials(scoped.key(), scoped.secret());
+        }
+        return properties.credentials();
+    }
+
     private String resolve(String path) {
         if (path.startsWith("http://") || path.startsWith("https://")) {
             return path;
         }
-        String base = properties.getBaseUrl();
+        String base = resolveBaseUrl();
         if (path.startsWith("/api/")) {
             URI baseUri = URI.create(base);
             String origin = baseUri.getScheme() + "://" + baseUri.getAuthority();
@@ -186,6 +195,14 @@ public class Trading212RestClient implements Trading212Gateway {
             return trimSlash(base) + path;
         }
         return trimSlash(base) + "/" + path;
+    }
+
+    private String resolveBaseUrl() {
+        Trading212CredentialContext.Bound scoped = Trading212CredentialContext.current();
+        if (scoped != null && scoped.baseUrl() != null && !scoped.baseUrl().isBlank()) {
+            return scoped.baseUrl();
+        }
+        return properties.getBaseUrl();
     }
 
     private static String trimSlash(String value) {

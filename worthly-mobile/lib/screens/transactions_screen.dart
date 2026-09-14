@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:worthly_mobile/api/csv_export.dart';
 import 'package:worthly_mobile/api/models.dart';
 import 'package:worthly_mobile/api/worthly_client.dart';
 import 'package:worthly_mobile/features/session/session.dart';
@@ -24,13 +25,21 @@ class TransactionsScreen extends ConsumerStatefulWidget {
 class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   String _filter = 'All';
   String _debounced = '';
+  late String _from;
+  late String _to;
   TxPage? _page;
   Tx? _open;
   Timer? _timer;
+  String? _exportError;
+  bool _exporting = false;
 
   @override
   void initState() {
     super.initState();
+    final owner = ref.read(sessionProvider).owner;
+    final range = Period.monthRange(Period.monthKey(owner?.reportingTimezone ?? 'UTC'));
+    _from = range.from;
+    _to = range.to;
     Future.microtask(_load);
   }
 
@@ -49,12 +58,9 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   }
 
   Future<void> _load() async {
-    final owner = ref.read(sessionProvider).owner;
-    if (owner == null) {
+    if (ref.read(sessionProvider).owner == null) {
       return;
     }
-    final month = Period.monthKey(owner.reportingTimezone);
-    final range = Period.monthRange(month);
     final uncategorized = ref.read(shellDataProvider).asData?.value.categories.where((item) => item.code == 'uncategorized').firstOrNull?.id;
     final extra = switch (_filter) {
       'Expenses' => '&economicType=EXPENSE',
@@ -66,7 +72,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     final q = _debounced.isEmpty ? '' : '&q=${Uri.encodeQueryComponent(_debounced)}';
     try {
       final page = await ref.read(worthlyClientProvider).get(
-        '/transactions?from=${range.from}&to=${range.to}&size=50$extra$q',
+        '/transactions?from=$_from&to=$_to&size=50$extra$q',
         parseTxPage,
       );
       if (mounted) {
@@ -75,6 +81,53 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     } catch (_) {
       if (mounted) {
         setState(() => _page = const TxPage(items: [], total: 0));
+      }
+    }
+  }
+
+  void _applyMonth(String monthKey) {
+    final range = Period.monthRange(monthKey);
+    setState(() {
+      _from = range.from;
+      _to = range.to;
+    });
+    _load();
+  }
+
+  void _onFrom(String value) {
+    setState(() {
+      _from = value;
+      if (value.compareTo(_to) > 0) {
+        _to = value;
+      }
+    });
+    _load();
+  }
+
+  void _onTo(String value) {
+    setState(() {
+      _to = value;
+      if (value.compareTo(_from) < 0) {
+        _from = value;
+      }
+    });
+    _load();
+  }
+
+  Future<void> _export() async {
+    setState(() {
+      _exportError = null;
+      _exporting = true;
+    });
+    try {
+      await shareTransactionsCsv(ref.read(worthlyClientProvider), from: _from, to: _to);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _exportError = 'Could not download the CSV. Try again.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
       }
     }
   }
@@ -115,6 +168,56 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            WorthlyCard(
+              padding: const EdgeInsets.fromLTRB(6, 6, 6, 4),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: 'Previous month',
+                        onPressed: () => _applyMonth(Period.shiftMonthKey(_from.substring(0, 7), -1)),
+                        icon: const Icon(Icons.chevron_left),
+                      ),
+                      Expanded(
+                        child: _DateField(label: 'From', value: _from, onPicked: _onFrom),
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Text('to', style: TextStyle(fontSize: 12, color: WorthlyColors.faint)),
+                      ),
+                      Expanded(
+                        child: _DateField(label: 'To', value: _to, onPicked: _onTo),
+                      ),
+                      IconButton(
+                        tooltip: 'Next month',
+                        onPressed: () => _applyMonth(Period.shiftMonthKey(_from.substring(0, 7), 1)),
+                        icon: const Icon(Icons.chevron_right),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => _applyMonth(Period.monthKey(owner.reportingTimezone)),
+                        child: const Text('This month'),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: _exporting ? null : _export,
+                        icon: const Icon(Icons.ios_share, size: 16),
+                        label: const Text('Export CSV'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            if (_exportError != null) ...[
+              const SizedBox(height: 8),
+              Text(_exportError!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 13)),
+            ],
+            const SizedBox(height: 12),
             FilterChipBar(
               labels: _filters,
               selected: _filter,
@@ -132,7 +235,12 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
             if (_page == null)
               const LoadingBody()
             else if (_page!.items.isEmpty)
-              const EmptyState(title: 'No transactions in this view', body: 'Try another filter or wait for the next successful sync.')
+              EmptyState(
+                title: 'No transactions in this view',
+                body: (shell?.connections.any((item) => item.provider == 'ENABLE_BANKING') ?? false)
+                    ? 'Try another filter, date range, or wait for the next successful sync.'
+                    : 'Connect Santander or Revolut from Connections to import card and account purchases. Trading 212 activity stays under Investments.',
+              )
             else
               WorthlyCard(
                 child: Column(
@@ -188,6 +296,49 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   }
 }
 
+class _DateField extends StatelessWidget {
+  const _DateField({required this.label, required this.value, required this.onPicked});
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onPicked;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: Period.parseYmd(value),
+          firstDate: DateTime(2000),
+          lastDate: DateTime(2100),
+          helpText: label,
+        );
+        if (picked != null) {
+          onPicked(Period.ymd(picked));
+        }
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          border: Border.all(color: WorthlyColors.ink.withValues(alpha: 0.12)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label.toUpperCase(), style: const TextStyle(fontSize: 9, letterSpacing: 0.6, color: WorthlyColors.faint, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 2),
+            Text(value, style: mono(size: 12.5)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TxRow extends StatelessWidget {
   const _TxRow({required this.tx, required this.privacy, required this.category, required this.onTap});
 
@@ -221,13 +372,16 @@ class _TxRow extends StatelessWidget {
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(tx.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
-                  Wrap(
+                    children: [
+                      Text(tx.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+                      Wrap(
                     spacing: 6,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
-                      Text(category, style: const TextStyle(fontSize: 11.5, color: WorthlyColors.faint)),
+                      Text(
+                        [category, if (tx.location != null && tx.location!.isNotEmpty) tx.location].join(' · '),
+                        style: const TextStyle(fontSize: 11.5, color: WorthlyColors.faint),
+                      ),
                       if (tx.pending)
                         const _MiniBadge(label: 'Pending', color: WorthlyColors.warn),
                       if (tx.transfer)
@@ -409,6 +563,9 @@ class _TransactionSheetState extends ConsumerState<TransactionSheet> {
                 child: Column(
                   children: [
                     _kv('Booked date', Period.instant(tx.reportingAt, widget.owner.reportingTimezone)),
+                    if (tx.location != null && tx.location!.isNotEmpty) _kv('Place', tx.location!),
+                    if (tx.description != null && tx.description!.isNotEmpty && tx.description != tx.merchant)
+                      _kv('Bank details', tx.description!),
                     _kv('Account', account == null ? tx.accountId : '${account.displayName}${account.maskedIdentifier == null ? '' : ' · ${account.maskedIdentifier}'}'),
                     _kv('Status', tx.lifecycleStatus),
                     _kv('Type', tx.economicType.replaceAll('_', ' ')),

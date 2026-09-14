@@ -32,25 +32,47 @@ public class OwnerService {
         }
         AppUserEntity entity = users.findById(id).orElseThrow(() -> ApiException.of(HttpStatus.UNAUTHORIZED, "unauthorized"));
         if (timezone != null) {
-            try {
-                java.time.ZoneId.of(timezone);
-            } catch (Exception ex) {
-                throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_timezone");
-            }
-            entity.setReportingTimezone(timezone);
+            entity.setReportingTimezone(requireTimezone(timezone));
         }
         if (currency != null) {
-            if (!currency.matches("^[A-Z]{3}$")) {
-                throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_currency");
-            }
-            try {
-                Currency.getInstance(currency);
-            } catch (Exception ex) {
-                throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_currency");
-            }
-            entity.setReportingCurrency(currency);
+            entity.setReportingCurrency(requireCurrency(currency));
         }
         return toOwner(entity);
+    }
+
+    public static String timezoneOrDefault(String timezone) {
+        if (timezone == null || timezone.isBlank()) {
+            return "Europe/Lisbon";
+        }
+        return requireTimezone(timezone.trim());
+    }
+
+    public static String currencyOrDefault(String currency) {
+        if (currency == null || currency.isBlank()) {
+            return "EUR";
+        }
+        return requireCurrency(currency.trim());
+    }
+
+    public static String requireTimezone(String timezone) {
+        try {
+            java.time.ZoneId.of(timezone);
+            return timezone;
+        } catch (Exception ex) {
+            throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_timezone");
+        }
+    }
+
+    public static String requireCurrency(String currency) {
+        if (!currency.matches("^[A-Z]{3}$")) {
+            throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_currency");
+        }
+        try {
+            Currency.getInstance(currency);
+            return currency;
+        } catch (Exception ex) {
+            throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_currency");
+        }
     }
 
     private static Owner toOwner(AppUserEntity entity) {

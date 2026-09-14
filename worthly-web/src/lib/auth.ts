@@ -64,12 +64,23 @@ export async function exchangeCode(code: string, verifier: string): Promise<WebS
   return requestTokens(body);
 }
 
+let refreshInFlight: { token: string; promise: Promise<WebSession> } | null = null;
+
 export async function refreshTokens(refreshToken: string): Promise<WebSession> {
+  if (refreshInFlight && refreshInFlight.token === refreshToken) {
+    return refreshInFlight.promise;
+  }
   const body = new URLSearchParams({
     grant_type: "refresh_token",
     refresh_token: refreshToken,
   });
-  return requestTokens(body);
+  const promise = requestTokens(body).finally(() => {
+    if (refreshInFlight?.promise === promise) {
+      refreshInFlight = null;
+    }
+  });
+  refreshInFlight = { token: refreshToken, promise };
+  return promise;
 }
 
 async function requestTokens(body: URLSearchParams): Promise<WebSession> {

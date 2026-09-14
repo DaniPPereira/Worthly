@@ -8,6 +8,8 @@ describe("BFF session cookies", () => {
     assert.equal(sessionCookieOptions.httpOnly, true);
     assert.equal(sessionCookieOptions.sameSite, "lax");
     assert.equal(sessionCookieOptions.path, "/");
+    assert.equal(sessionCookieOptions.maxAge, 60 * 60 * 24 * 14);
+    assert.equal(sessionCookieOptions.path, "/");
     assert.equal(CSRF_COOKIE, "worthly_csrf");
     assert.equal(csrfCookieOptions.httpOnly, false);
   });

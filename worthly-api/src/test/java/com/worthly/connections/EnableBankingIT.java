@@ -119,7 +119,18 @@ class EnableBankingIT extends AbstractIntegrationTest {
                 .andReturn();
         JsonNode page = objectMapper.readTree(transactions.getResponse().getContentAsString());
         assertThat(page.get("total").asLong()).isEqualTo(3);
-        assertThat(page.get("items").get(0).get("economicType").asText()).isEqualTo("OTHER");
+        assertThat(page.get("items").get(0).get("economicType").asText()).isEqualTo("EXPENSE");
+        assertThat(page.get("items").get(0).get("merchant").asText()).isEqualTo("Merchant Test");
+        JsonNode coffee = null;
+        for (JsonNode item : page.get("items")) {
+            if ("Cafe Test".equals(item.path("merchant").asText())) {
+                coffee = item;
+            }
+        }
+        assertThat(coffee).isNotNull();
+        assertThat(coffee.get("economicType").asText()).isEqualTo("EXPENSE");
+        assertThat(coffee.get("description").asText()).isEqualTo("Coffee");
+        assertThat(coffee.get("location").asText()).contains("Lisboa");
 
         MvcResult accounts = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/accounts").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -289,7 +300,7 @@ class EnableBankingIT extends AbstractIntegrationTest {
                           {"transaction_id":"tx-1","credit_debit_indicator":"DBIT","status":"BOOK",
                            "transaction_amount":{"amount":"12.50","currency":"EUR"},
                            "booking_date":"2026-09-01","remittance_information":["Coffee"],
-                           "creditor":{"name":"Cafe Test"}}
+                           "creditor":{"name":"Cafe Test","postal_address":{"town_name":"Lisboa","country":"PT"}}}
                         ],"continuation_key":"page-2"}
                         """)));
     }

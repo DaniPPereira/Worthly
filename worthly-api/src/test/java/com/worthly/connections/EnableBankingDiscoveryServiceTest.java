@@ -23,5 +23,8 @@ class EnableBankingDiscoveryServiceTest {
         assertThat(EnableBankingDiscoveryService.isV1Bank(revolut, "PT")).isTrue();
         assertThat(EnableBankingDiscoveryService.isV1Bank(bcp, "PT")).isFalse();
         assertThat(EnableBankingDiscoveryService.isV1Bank(santanderEs, "PT")).isFalse();
+        assertThat(EnableBankingDiscoveryService.isMockBank(
+                        new EnableBankingModels.DiscoveredBank("Mock ASPSP", "FI", null, 1)))
+                .isTrue();
     }
 }

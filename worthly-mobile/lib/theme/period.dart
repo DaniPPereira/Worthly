@@ -28,6 +28,25 @@ class Period {
     return (from: '$monthKey-01', to: '$monthKey-${last.toString().padLeft(2, '0')}');
   }
 
+  static String shiftMonthKey(String monthKey, int delta) {
+    final year = int.parse(monthKey.substring(0, 4));
+    final month = int.parse(monthKey.substring(5, 7));
+    final date = DateTime.utc(year, month + delta, 1);
+    return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}';
+  }
+
+  static DateTime parseYmd(String value) {
+    return DateTime(
+      int.parse(value.substring(0, 4)),
+      int.parse(value.substring(5, 7)),
+      int.parse(value.substring(8, 10)),
+    );
+  }
+
+  static String ymd(DateTime date) {
+    return '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
   static String monthLabel(String monthKey) {
     const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     final month = int.parse(monthKey.substring(5, 7));

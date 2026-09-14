@@ -1,10 +1,10 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
-import { apiGet, apiSend } from "@/lib/api";
+import { ApiError, apiGet, apiSend } from "@/lib/api";
 import { AppDataContext } from "@/lib/app-data";
 import { formatInstant } from "@/lib/period";
 import { readPrivacy, writePrivacy } from "@/lib/privacy";
@@ -12,7 +12,6 @@ import type { Category, Connection, Notification, Owner } from "@/lib/types";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [owner, setOwner] = useState<Owner | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -28,8 +27,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    const [nextOwner, nextConnections, nextNotifications, nextCategories] = await Promise.all([
-      apiGet<Owner>("/me"),
+    const nextOwner = await apiGet<Owner>("/me");
+    const [nextConnections, nextNotifications, nextCategories] = await Promise.all([
       apiGet<Connection[]>("/connections"),
       apiGet<Notification[]>("/notifications"),
       apiGet<Category[]>("/categories"),
@@ -45,7 +44,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     setPrivacyState(readPrivacy());
     void refresh()
       .catch((err: unknown) => {
-        if (err instanceof Error && err.message === "unauthorized") {
+        if (err instanceof ApiError && err.status === 401) {
           return;
         }
         setError("Unable to load Worthly.");
@@ -96,8 +95,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   if (!owner) {
-    router.replace("/login");
-    return null;
+    return (
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "var(--paper)" }}>
+        <p className="muted">{error ?? "Signing you in…"}</p>
+      </div>
+    );
   }
 
   return (

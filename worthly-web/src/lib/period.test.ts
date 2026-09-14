@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { monthDateRange, monthKeyInZone, previousMonthKeys } from "./period.ts";
+import { monthDateRange, monthKeyInZone, previousMonthKeys, shiftMonthKey } from "./period.ts";
 
 describe("reporting periods", () => {
   it("reads the calendar month in the owner timezone", () => {
@@ -16,5 +16,10 @@ describe("reporting periods", () => {
 
   it("includes the last day of February", () => {
     assert.deepEqual(monthDateRange("2026-02"), { from: "2026-02-01", to: "2026-02-28" });
+  });
+
+  it("shifts a month key across year boundaries", () => {
+    assert.equal(shiftMonthKey("2026-01", -1), "2025-12");
+    assert.equal(shiftMonthKey("2025-12", 1), "2026-01");
   });
 });

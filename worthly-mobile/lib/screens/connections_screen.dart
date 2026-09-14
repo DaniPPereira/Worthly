@@ -19,10 +19,15 @@ class ConnectionsScreen extends ConsumerStatefulWidget {
 
 class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   List<BankChoice> _banks = [];
+  String? _banksError;
   List<_LogRow> _log = [];
   Connection? _handoff;
   Connection? _purge;
   String? _busyId;
+  String? _t212Error;
+  String? _authError;
+  final _t212Key = TextEditingController();
+  final _t212Secret = TextEditingController();
 
   @override
   void initState() {
@@ -34,11 +39,17 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     try {
       final banks = await ref.read(worthlyClientProvider).get('/connections/banks?country=PT', parseBanks);
       if (mounted) {
-        setState(() => _banks = banks);
+        setState(() {
+          _banks = banks;
+          _banksError = null;
+        });
       }
-    } catch (_) {
+    } catch (err) {
       if (mounted) {
-        setState(() => _banks = []);
+        setState(() {
+          _banks = [];
+          _banksError = err is StateError ? err.message : 'provider_error';
+        });
       }
     }
     await _loadLog();
@@ -62,17 +73,28 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   }
 
   Future<void> _authorize(String name, String country) async {
-    await ref.read(sessionProvider.notifier).runExternal(() async {
-      final url = await ref.read(worthlyClientProvider).send(
-        'POST',
-        '/connections/enable-banking/authorize',
-        body: {'name': name, 'country': country, 'returnClient': 'MOBILE'},
-        parse: parseAuthUrl,
-      );
-      if (url != null) {
-        await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    setState(() => _authError = null);
+    try {
+      await ref.read(sessionProvider.notifier).runExternal(() async {
+        final url = await ref.read(worthlyClientProvider).send(
+          'POST',
+          '/connections/enable-banking/authorize',
+          body: {'name': name, 'country': country, 'returnClient': 'MOBILE'},
+          parse: parseAuthUrl,
+        );
+        if (url != null) {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+      });
+    } catch (err) {
+      if (mounted) {
+        setState(() {
+          _authError = err is StateError && err.message == 'redirect_url_mismatch'
+              ? 'The Enable Banking app redirect URL does not match Worthly.'
+              : 'Enable Banking rejected the bank login start. Try again.';
+        });
       }
-    });
+    }
     if (mounted) {
       setState(() => _handoff = null);
     }
@@ -116,6 +138,42 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     }
   }
 
+  Future<void> _connectTrading212() async {
+    setState(() {
+      _busyId = 'trading-212';
+      _t212Error = null;
+    });
+    try {
+      final connection = await ref.read(worthlyClientProvider).send(
+        'POST',
+        '/connections/trading-212',
+        body: {'apiKey': _t212Key.text.trim(), 'apiSecret': _t212Secret.text, 'environment': 'LIVE'},
+        parse: parseConnection,
+      );
+      _t212Key.clear();
+      _t212Secret.clear();
+      ref.invalidate(shellDataProvider);
+      if (connection?.status == 'ERROR' && mounted) {
+        setState(() => _t212Error = 'Trading 212 rejected those credentials. Use a read-only Live key from Trading 212 Invest (or Stocks ISA) and try again.');
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _t212Error = 'Could not connect Trading 212.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busyId = null);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _t212Key.dispose();
+    _t212Secret.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final owner = ref.watch(sessionProvider).owner;
@@ -123,6 +181,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     final result = ref.watch(connectionResultProvider);
     final names = connections.map((item) => item.institutionName).whereType<String>().toSet();
     final unused = _banks.where((bank) => !names.contains(bank.name)).toList();
+    final hasTrading212 = connections.any((item) => item.provider == 'TRADING_212');
     return Stack(
       children: [
         ListView(
@@ -151,7 +210,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
             if (connections.isEmpty)
               const EmptyState(
                 title: 'No providers yet',
-                body: 'Connect Santander Portugal or Revolut through Enable Banking. Trading 212 is configured with a server-side read-only key.',
+                body: 'Connect Santander Portugal or Revolut through Enable Banking, or add Trading 212 with a read-only API key from this screen.',
               )
             else
               for (final connection in connections) ...[
@@ -163,16 +222,23 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                   onDisconnect: () => _disconnect(connection),
                   onPurge: () => setState(() => _purge = connection),
                   onReauth: () => setState(() => _handoff = connection),
+                  showTrading212Form: connection.provider == 'TRADING_212' &&
+                      (connection.status == 'CONFIGURATION_REQUIRED' || connection.status == 'ERROR'),
+                  t212Error: connection.provider == 'TRADING_212' ? _t212Error : null,
+                  t212Key: _t212Key,
+                  t212Secret: _t212Secret,
+                  t212Busy: _busyId == 'trading-212',
+                  onSaveTrading212: _connectTrading212,
                 ),
                 const SizedBox(height: 12),
               ],
-            if (unused.isNotEmpty) ...[
-              WorthlyCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('CONNECT A BANK', style: labelStyle()),
-                    const SizedBox(height: 14),
+            WorthlyCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('CONNECT A BANK', style: labelStyle()),
+                  const SizedBox(height: 14),
+                  if (unused.isNotEmpty)
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -184,12 +250,64 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                             child: Text('Connect ${bank.name}'),
                           ),
                       ],
+                    )
+                  else if (_banksError == 'configuration_required')
+                    const Text(
+                      'Santander and Revolut need an Enable Banking app on this server (application ID and RSA private key). Until that is configured, bank buttons cannot appear. You still log in at the bank — Worthly never sees that password.',
+                      style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
+                    )
+                  else if (_banksError != null)
+                    Text(
+                      'Banks could not be loaded (${_banksError!.replaceAll('_', ' ')}).',
+                      style: const TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
+                    )
+                  else if (_banks.isEmpty)
+                    const Text(
+                      'Enable Banking is configured, but this sandbox did not return Santander or Revolut. Add a Mock ASPSP in the Enable Banking control panel, then refresh. Real banks need a Production application.',
+                      style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
+                    )
+                  else
+                    const Text(
+                      'All supported banks for Portugal are already connected.',
+                      style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
                     ),
+                  if (unused.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     const Text(
                       'Opens your bank in the system browser. You confirm there — Worthly never sees your credentials.',
                       style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
                     ),
+                  ],
+                  if (_authError != null) ...[
+                    const SizedBox(height: 10),
+                    Text(_authError!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 12, height: 1.5)),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (!hasTrading212) ...[
+              WorthlyCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CONNECT TRADING 212', style: labelStyle()),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Paste a read-only Live API key from Trading 212 Invest (or Stocks ISA). Crypto is a separate Trading 212 account and is not included. Worthly encrypts the key on the server and keeps it until you replace it.',
+                      style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
+                    ),
+                    if (_t212Error != null) ...[
+                      const SizedBox(height: 10),
+                      Text(_t212Error!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 12)),
+                    ],
+                    const SizedBox(height: 12),
+                    _Trading212Fields(
+                      apiKey: _t212Key,
+                      apiSecret: _t212Secret,
+                    ),
+                    const SizedBox(height: 12),
+                    PineButton(label: 'Save read-only key', onPressed: _busyId == 'trading-212' ? null : _connectTrading212),
                   ],
                 ),
               ),
@@ -282,6 +400,12 @@ class _ConnectionCard extends StatelessWidget {
     required this.onDisconnect,
     required this.onPurge,
     required this.onReauth,
+    this.showTrading212Form = false,
+    this.t212Error,
+    this.t212Key,
+    this.t212Secret,
+    this.t212Busy = false,
+    this.onSaveTrading212,
   });
 
   final Connection connection;
@@ -291,6 +415,12 @@ class _ConnectionCard extends StatelessWidget {
   final VoidCallback onDisconnect;
   final VoidCallback onPurge;
   final VoidCallback onReauth;
+  final bool showTrading212Form;
+  final String? t212Error;
+  final TextEditingController? t212Key;
+  final TextEditingController? t212Secret;
+  final bool t212Busy;
+  final VoidCallback? onSaveTrading212;
 
   @override
   Widget build(BuildContext context) {
@@ -301,7 +431,7 @@ class _ConnectionCard extends StatelessWidget {
         ? 'Credentials'
         : (needsAuth ? 'Consent expired' : 'Consent expires');
     final consentValue = connection.consentExpiresAt == null
-        ? (bank ? '—' : 'Server secret')
+        ? (bank ? '—' : 'Encrypted on server')
         : Period.instant(connection.consentExpiresAt, timezone);
     return WorthlyCard(
       child: Column(
@@ -341,9 +471,24 @@ class _ConnectionCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             PineButton(label: 'Reauthorize in browser', onPressed: busy ? null : onReauth),
+          ] else if (showTrading212Form) ...[
+            if (t212Error != null)
+              Text(t212Error!, style: const TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.loss)),
+            const Text(
+              'Add a read-only Trading 212 API key. Worthly encrypts it on the server.',
+              style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
+            ),
+            const SizedBox(height: 10),
+            if (t212Key != null && t212Secret != null)
+              _Trading212Fields(
+                apiKey: t212Key!,
+                apiSecret: t212Secret!,
+              ),
+            const SizedBox(height: 10),
+            PineButton(label: 'Save read-only key', onPressed: t212Busy ? null : onSaveTrading212),
           ] else if (connection.status == 'CONFIGURATION_REQUIRED')
             const Text(
-              'Set WORTHLY_T212_API_KEY and WORTHLY_T212_API_SECRET on the server. Credentials are never stored on this connection.',
+              'Add a read-only Trading 212 API key from this screen.',
               style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
             )
           else
@@ -502,4 +647,71 @@ class _LogRow {
 
   final SyncRun run;
   final String provider;
+}
+
+class _Trading212Fields extends StatefulWidget {
+  const _Trading212Fields({
+    required this.apiKey,
+    required this.apiSecret,
+  });
+
+  final TextEditingController apiKey;
+  final TextEditingController apiSecret;
+
+  @override
+  State<_Trading212Fields> createState() => _Trading212FieldsState();
+}
+
+class _Trading212FieldsState extends State<_Trading212Fields> {
+  bool _showSecret = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        TextField(
+          controller: widget.apiKey,
+          obscureText: false,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: _decoration('API key'),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: widget.apiSecret,
+          obscureText: !_showSecret,
+          autocorrect: false,
+          enableSuggestions: false,
+          decoration: _decoration('API secret').copyWith(
+            suffixIcon: IconButton(
+              tooltip: _showSecret ? 'Hide secret' : 'Show secret',
+              onPressed: () => setState(() => _showSecret = !_showSecret),
+              icon: Icon(
+                _showSecret ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                size: 20,
+                color: WorthlyColors.faint,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  InputDecoration _decoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: WorthlyColors.ink.withValues(alpha: 0.12)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: WorthlyColors.ink.withValues(alpha: 0.12)),
+      ),
+    );
+  }
 }

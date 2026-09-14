@@ -41,29 +41,43 @@ async function proxy(
       session = await refreshTokens(session.refreshToken);
       refreshed = await encryptPayload(session);
     } catch {
-      return NextResponse.json({ title: "Unauthorized" }, { status: 401 });
+      if (session.accessExpiresAt <= Date.now()) {
+        return NextResponse.json({ title: "Unauthorized" }, { status: 401 });
+      }
     }
   }
   const { path } = await context.params;
   const suffix = `/${(path ?? []).join("/")}`;
   const incomingUrl = new URL(request.url);
   const init: RequestInit = { method };
+  const outbound = new Headers();
+  if (suffix.endsWith(".csv")) {
+    outbound.set("Accept", "text/csv");
+  }
   if (method !== "GET" && method !== "DELETE") {
-    init.body = await request.text();
-    init.headers = { "Content-Type": request.headers.get("content-type") ?? "application/json" };
+    const text = await request.text();
+    if (text.length > 0) {
+      outbound.set("Content-Type", request.headers.get("content-type") ?? "application/json");
+      init.body = text;
+    }
+  }
+  if ([...outbound.keys()].length > 0) {
+    init.headers = outbound;
   }
   const upstream = await apiFetch(session, `${suffix}${incomingUrl.search}`, init);
-  const body = await upstream.text();
-  const headers = new Headers({
-    "Content-Type": upstream.headers.get("content-type") ?? "application/json",
-  });
+  const raw = await upstream.text();
+  const noContent = upstream.status === 204 || upstream.status === 205 || upstream.status === 304;
+  const inbound = new Headers();
+  if (!noContent) {
+    inbound.set("Content-Type", upstream.headers.get("content-type") ?? "application/json");
+  }
   const disposition = upstream.headers.get("content-disposition");
   if (disposition) {
-    headers.set("Content-Disposition", disposition);
+    inbound.set("Content-Disposition", disposition);
   }
-  const response = new NextResponse(body, {
+  const response = new NextResponse(noContent || !raw ? null : raw, {
     status: upstream.status,
-    headers,
+    headers: inbound,
   });
   if (refreshed) {
     response.cookies.set(SESSION_COOKIE, refreshed, sessionCookieOptions);

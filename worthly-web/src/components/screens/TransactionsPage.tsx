@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/ui/Primitives";
 import { apiGet, downloadCsv } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
 import { formatAmount, formatSignedAmount } from "@/lib/money";
-import { formatDay, monthDateRange, monthKeyInZone } from "@/lib/period";
+import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
 import type { Account, TransactionPage } from "@/lib/types";
 
 const FILTERS = ["All", "Expenses", "Income", "Transfers", "Uncategorized"] as const;
@@ -29,7 +29,7 @@ function queryFor(filter: Filter, uncategorizedId: string | undefined): string {
 }
 
 export function TransactionsPage() {
-  const { owner, privacy, categories } = useAppData();
+  const { owner, privacy, categories, connections } = useAppData();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<Filter>("All");
@@ -38,9 +38,12 @@ export function TransactionsPage() {
   const [page, setPage] = useState<TransactionPage | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open"));
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  const month = monthKeyInZone(owner.reportingTimezone);
-  const { from, to } = monthDateRange(month);
+  const currentMonth = monthKeyInZone(owner.reportingTimezone);
+  const initialRange = monthDateRange(currentMonth);
+  const [from, setFrom] = useState(initialRange.from);
+  const [to, setTo] = useState(initialRange.to);
   const uncategorizedId = categories.find((item) => item.code === "uncategorized")?.id;
 
   useEffect(() => {
@@ -63,6 +66,35 @@ export function TransactionsPage() {
   const accountName = (id: string) => accounts.find((item) => item.id === id)?.displayName ?? "Account";
   const accountMask = (id: string) => accounts.find((item) => item.id === id)?.maskedIdentifier ?? "";
 
+  function applyMonth(monthKey: string) {
+    const range = monthDateRange(monthKey);
+    setFrom(range.from);
+    setTo(range.to);
+  }
+
+  function onFromChange(value: string) {
+    setFrom(value);
+    if (value && to && value > to) {
+      setTo(value);
+    }
+  }
+
+  function onToChange(value: string) {
+    setTo(value);
+    if (value && from && value < from) {
+      setFrom(value);
+    }
+  }
+
+  async function exportCsv() {
+    setExportError(null);
+    try {
+      await downloadCsv(`/exports/transactions.csv?from=${from}&to=${to}`, "transactions.csv");
+    } catch {
+      setExportError("Could not download the CSV. Try again.");
+    }
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -78,18 +110,37 @@ export function TransactionsPage() {
             style={{ border: "none", outline: "none", flex: 1, background: "transparent", fontSize: 13 }}
           />
         </label>
-        <div className="mono" style={{ background: "#fff", border: "1px solid rgba(19,26,25,.11)", borderRadius: 10, padding: "10px 13px", fontSize: 12.5 }}>
-          {from.slice(8)} {monthLabel(from)} – {to.slice(8)} {monthLabel(to)} {to.slice(0, 4)}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#fff", border: "1px solid rgba(19,26,25,.11)", borderRadius: 10, padding: "4px 8px" }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ height: 32, width: 32, padding: 0, border: "none" }}
+            aria-label="Previous month"
+            onClick={() => applyMonth(shiftMonthKey(from.slice(0, 7), -1))}
+          >
+            ‹
+          </button>
+          <input type="date" value={from} onChange={(event) => onFromChange(event.target.value)} style={dateInput} />
+          <span className="muted" style={{ fontSize: 12 }}>to</span>
+          <input type="date" value={to} onChange={(event) => onToChange(event.target.value)} style={dateInput} />
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ height: 32, width: 32, padding: 0, border: "none" }}
+            aria-label="Next month"
+            onClick={() => applyMonth(shiftMonthKey(from.slice(0, 7), 1))}
+          >
+            ›
+          </button>
+          <button type="button" className="btn btn-ghost" style={{ height: 32 }} onClick={() => applyMonth(currentMonth)}>
+            This month
+          </button>
         </div>
-        <button
-          type="button"
-          className="btn btn-ghost"
-          style={{ height: 40 }}
-          onClick={() => void downloadCsv(`/exports/transactions.csv?from=${from}&to=${to}`, "transactions.csv")}
-        >
+        <button type="button" className="btn btn-ghost" style={{ height: 40 }} onClick={() => void exportCsv()}>
           Export CSV
         </button>
       </div>
+      {exportError ? <p style={{ color: "var(--loss)", fontSize: 13, margin: 0 }}>{exportError}</p> : null}
       <div style={{ display: "flex", gap: 8 }}>
         {FILTERS.map((item) => {
           const active = filter === item;
@@ -119,7 +170,11 @@ export function TransactionsPage() {
       {!page ? (
         <p className="muted">Loading transactions…</p>
       ) : page.items.length === 0 ? (
-        <EmptyState title="No transactions in this view">Try another filter or wait for the next successful sync.</EmptyState>
+        <EmptyState title="No transactions in this view">
+          {connections.some((connection) => connection.provider === "ENABLE_BANKING")
+            ? "Try another filter, date range, or wait for the next successful sync."
+            : "Connect Santander or Revolut from Connections to import card and account purchases. Trading 212 activity stays under Investments."}
+        </EmptyState>
       ) : (
         <div className="card" style={{ overflow: "hidden", borderRadius: 14 }}>
           <div
@@ -171,28 +226,35 @@ export function TransactionsPage() {
                 <span className="mono" style={{ fontSize: 12, color: "var(--faint)" }}>
                   {formatDay(tx.reportingAt, owner.reportingTimezone)}
                 </span>
-                <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
-                  <span
-                    style={{
-                      width: 26,
-                      height: 26,
-                      flex: "none",
-                      borderRadius: 7,
-                      background: credit ? "rgba(20,101,74,.1)" : transfer ? "rgba(14,74,62,.08)" : "rgba(19,26,25,.06)",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontWeight: 600,
-                      fontSize: 11,
-                      color: credit ? "var(--gain)" : transfer ? "var(--pine)" : "#5E6A67",
-                    }}
-                  >
-                    {initial}
+                  <span style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 9 }}>
+                    <span
+                      style={{
+                        width: 26,
+                        height: 26,
+                        flex: "none",
+                        borderRadius: 7,
+                        background: credit ? "rgba(20,101,74,.1)" : transfer ? "rgba(14,74,62,.08)" : "rgba(19,26,25,.06)",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 600,
+                        fontSize: 11,
+                        color: credit ? "var(--gain)" : transfer ? "var(--pine)" : "#5E6A67",
+                      }}
+                    >
+                      {initial}
+                    </span>
+                    <span style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+                      <span style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {tx.merchant || tx.description || "Transaction"}
+                      </span>
+                      {tx.location || (tx.description && tx.description !== tx.merchant) ? (
+                        <span style={{ fontSize: 11.5, color: "var(--faint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {[tx.location, tx.description && tx.description !== tx.merchant ? tx.description : null].filter(Boolean).join(" · ")}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
-                  <span style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {tx.merchant || tx.description || "Transaction"}
-                  </span>
-                </span>
                 <span style={{ fontSize: 12.5, color: uncategorized ? "var(--warn)" : "var(--faint)" }}>{category?.label ?? "Uncategorized"}</span>
                 <span className="mono" style={{ fontSize: 11.5, color: "var(--faint)" }}>
                   {accountName(tx.accountId)} {accountMask(tx.accountId)}
@@ -240,6 +302,11 @@ export function TransactionsPage() {
   );
 }
 
-function monthLabel(isoDate: string): string {
-  return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(new Date(`${isoDate}T00:00:00Z`));
-}
+const dateInput = {
+  border: "1px solid rgba(19,26,25,.12)",
+  borderRadius: 8,
+  padding: "6px 8px",
+  font: "500 12.5px var(--font-mono)",
+  background: "transparent",
+  color: "var(--ink)",
+} as const;

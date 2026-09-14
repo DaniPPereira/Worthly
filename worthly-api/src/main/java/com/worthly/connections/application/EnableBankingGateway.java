@@ -4,12 +4,17 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface EnableBankingGateway {
 
     boolean configured();
 
     List<EnableBankingModels.DiscoveredBank> listAspsps(String country);
+
+    default Optional<ApplicationInfo> application() {
+        return Optional.empty();
+    }
 
     EnableBankingModels.AuthStart startAuthorization(
             String aspspName, String country, String state, Instant validUntil);
@@ -67,4 +72,6 @@ public interface EnableBankingGateway {
         }
         return Instant.now().plus(fallback);
     }
+
+    record ApplicationInfo(List<String> redirectUrls, String environment) {}
 }

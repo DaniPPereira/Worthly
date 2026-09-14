@@ -2,11 +2,15 @@ package com.worthly.infrastructure.security;
 
 import com.worthly.identity.adapter.out.persistence.AppUserRepository;
 import com.worthly.infrastructure.config.WorthlyProperties;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.UUID;
+import java.util.List;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -37,10 +41,14 @@ import org.springframework.security.oauth2.server.authorization.token.JwtEncodin
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.csrf.CsrfFilter;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 @Configuration
 public class SecurityConfig {
@@ -66,7 +74,7 @@ public class SecurityConfig {
             throws Exception {
         http.securityMatcher("/api/**")
                 .authorizeHttpRequests(auth -> auth.requestMatchers(
-                                "/api/v1/connections/enable-banking/callback")
+                                "/api/v1/register", "/api/v1/connections/enable-banking/callback")
                         .permitAll()
                         .anyRequest()
                         .authenticated())
@@ -85,13 +93,24 @@ public class SecurityConfig {
 
     @Bean
     @Order(3)
-    SecurityFilterChain loginSecurityFilterChain(HttpSecurity http, CorsConfigurationSource cors) throws Exception {
+    SecurityFilterChain loginSecurityFilterChain(
+            HttpSecurity http, CorsConfigurationSource cors, WorthlyProperties properties) throws Exception {
+        CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         http.authorizeHttpRequests(auth -> auth.requestMatchers(
-                                "/login", "/error", "/actuator/health", "/actuator/health/**")
+                                "/",
+                                "/login",
+                                "/register",
+                                "/error",
+                                "/actuator/health",
+                                "/actuator/health/**")
                         .permitAll()
                         .anyRequest()
                         .denyAll())
-                .formLogin(form -> form.loginPage("/login").permitAll())
+                .csrf(csrf -> csrf.csrfTokenRequestHandler(csrfRequestHandler))
+                .addFilterAfter(new CsrfTokenEagerLoadFilter(), CsrfFilter.class)
+                .formLogin(form -> form.loginPage("/login")
+                        .defaultSuccessUrl(webAppOrigin(properties), false)
+                        .permitAll())
                 .cors(c -> c.configurationSource(cors))
                 .headers(headers -> headers
                         .contentTypeOptions(Customizer.withDefaults())
@@ -109,7 +128,7 @@ public class SecurityConfig {
                 .refreshTokenTimeToLive(properties.getOauth().getRefreshTokenAbsoluteTtl())
                 .reuseRefreshTokens(false)
                 .build();
-        RegisteredClient web = RegisteredClient.withId(UUID.randomUUID().toString())
+        RegisteredClient web = RegisteredClient.withId(properties.getOauth().getWebClientId())
                 .clientId(properties.getOauth().getWebClientId())
                 .clientSecret(encoder.encode(readWebSecret(properties)))
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
@@ -126,7 +145,7 @@ public class SecurityConfig {
                         .build())
                 .tokenSettings(tokens)
                 .build();
-        RegisteredClient mobile = RegisteredClient.withId(UUID.randomUUID().toString())
+        RegisteredClient mobile = RegisteredClient.withId(properties.getOauth().getMobileClientId())
                 .clientId(properties.getOauth().getMobileClientId())
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
@@ -202,6 +221,29 @@ public class SecurityConfig {
             return Files.readString(Path.of(file), StandardCharsets.UTF_8).strip();
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to read web client secret file", ex);
+        }
+    }
+
+    public static String webAppOrigin(WorthlyProperties properties) {
+        List<String> origins = properties.getCors().getAllowedOrigins();
+        String origin = (origins == null || origins.isEmpty()) ? "http://localhost:3000" : origins.getFirst();
+        return origin.endsWith("/") ? origin : origin + "/";
+    }
+
+    /**
+     * Spring Security 6 defers CSRF token generation; a Thymeleaf login form can POST without a
+     * token and get a 403 even when the password is correct.
+     */
+    private static final class CsrfTokenEagerLoadFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(
+                HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+                throws ServletException, IOException {
+            Object csrf = request.getAttribute(CsrfToken.class.getName());
+            if (csrf instanceof CsrfToken token) {
+                token.getToken();
+            }
+            filterChain.doFilter(request, response);
         }
     }
 }

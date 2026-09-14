@@ -38,6 +38,7 @@ public final class EnableBankingModels {
             LocalDate valueDate,
             String description,
             String counterparty,
+            String location,
             String rawJson) {}
 
     public record TransactionPage(List<ProviderTransaction> transactions, String continuationKey) {}

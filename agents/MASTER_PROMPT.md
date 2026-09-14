@@ -162,7 +162,7 @@ Financial providers:
 - Trading 212 Public API, READ-ONLY
 
 Worthly v1:
-- single owner
+- multi-user tenancy with public registration
 - no payment initiation
 - no brokerage orders
 - no bank scraping

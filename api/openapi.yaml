@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Worthly API
-  version: 4.1.0
+  version: 4.2.0
   description: |
     Canonical MVP API contract for Worthly.
 
@@ -27,6 +27,28 @@ tags:
   - {name: Notifications}
   - {name: Exports}
 paths:
+  /register:
+    post:
+      tags: [Identity]
+      operationId: register
+      security: []
+      description: |
+        Creates an isolated user. Does not issue tokens. The caller then
+        signs in through OAuth. Duplicate email is 409 `email_taken`.
+        Password minimum length is 14 characters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RegisterRequest'}
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Owner'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
   /me:
     get:
       tags: [Identity]
@@ -116,6 +138,28 @@ paths:
               schema:
                 type: array
                 items: {$ref: '#/components/schemas/BankChoice'}
+  /connections/trading-212:
+    post:
+      tags: [Connections]
+      operationId: connectTrading212
+      security: [{oauth2: [worthly.write]}]
+      description: |
+        Stores a read-only Trading 212 API key and secret encrypted at rest
+        for the current user. Secrets never appear in responses, logs or
+        audit metadata. Validates the key against Trading 212 when reachable.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Trading212ConnectRequest'}
+      responses:
+        '200':
+          description: Connection upserted
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Connection'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
   /connections/enable-banking/authorize:
     post:
       tags: [Connections]
@@ -465,7 +509,7 @@ paths:
         Header row, UTF-8, comma-separated:
 
         id,accountId,reportingAt,direction,lifecycleStatus,economicType,
-        amount,currency,merchant,description,categoryCode,categoryLabel,
+        amount,currency,merchant,description,location,categoryCode,categoryLabel,
         notes,transferMatchId
       parameters:
         - {$ref: '#/components/parameters/FromDate'}
@@ -534,6 +578,9 @@ components:
     BadRequest:
       description: Bad request
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    Conflict:
+      description: Conflict
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
   schemas:
     Money:
       type: object
@@ -566,6 +613,20 @@ components:
           type: string
           pattern: '^[A-Z]{3}$'
           description: ISO 4217 reporting currency preference. Does not imply FX conversion.
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 14, maxLength: 128}
+        reportingTimezone:
+          type: string
+          minLength: 1
+          maxLength: 64
+        reportingCurrency:
+          type: string
+          pattern: '^[A-Z]{3}$'
     Device:
       type: object
       required: [id, platform, createdAt, revoked]
@@ -604,6 +665,17 @@ components:
         name: {type: string}
         country: {type: string, minLength: 2, maxLength: 2}
         returnClient: {type: string, enum: [WEB, MOBILE]}
+    Trading212ConnectRequest:
+      type: object
+      required: [apiKey, apiSecret]
+      additionalProperties: false
+      properties:
+        apiKey: {type: string, minLength: 1, maxLength: 256}
+        apiSecret: {type: string, minLength: 1, maxLength: 256}
+        environment:
+          type: string
+          enum: [LIVE, DEMO]
+          description: LIVE is the real account; DEMO is Practice. If omitted, LIVE is tried first then DEMO.
     AuthorizationRedirect:
       type: object
       required: [url, expiresAt]
@@ -653,6 +725,7 @@ components:
         money: {$ref: '#/components/schemas/Money'}
         merchant: {type: string}
         description: {type: string}
+        location: {type: string}
         reportingAt: {type: string, format: date-time}
         categoryId: {type: string, format: uuid}
         notes: {type: string, maxLength: 1000}

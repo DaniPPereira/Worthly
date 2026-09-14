@@ -152,11 +152,13 @@ export function TransactionDrawer({
         <div className="card" style={{ marginTop: 18, padding: "4px 16px", borderRadius: 14 }}>
           {[
             { k: "Booked date", v: formatInstant(transaction.reportingAt, owner.reportingTimezone) },
+            { k: "Place", v: transaction.location },
+            { k: "Bank details", v: transaction.description && transaction.description !== transaction.merchant ? transaction.description : null },
             { k: "Account", v: account ? `${account.displayName}${account.maskedIdentifier ? ` · ${account.maskedIdentifier}` : ""}` : transaction.accountId },
             { k: "Status", v: transaction.lifecycleStatus },
             { k: "Type", v: transaction.economicType.replaceAll("_", " ") },
             { k: "Currency", v: transaction.money.currency },
-          ].map((row) => (
+          ].filter((row) => row.v).map((row) => (
             <div key={row.k} style={{ borderTop: "1px solid rgba(19,26,25,.06)", padding: "11px 0", display: "flex", justifyContent: "space-between", gap: 14 }}>
               <span style={{ fontSize: 12.5, color: "#5E6A67" }}>{row.k}</span>
               <span className="mono" style={{ fontSize: 12.5, fontWeight: 500, textAlign: "right" }}>

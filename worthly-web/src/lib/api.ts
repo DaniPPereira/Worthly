@@ -20,22 +20,44 @@ async function parseBody<T>(response: Response): Promise<T | null> {
   if (!text) {
     return null;
   }
-  return JSON.parse(text) as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
 }
 
-function redirectIfUnauthorized(status: number): void {
-  if (status === 401 && !window.location.pathname.startsWith("/login")) {
-    window.location.href = "/login";
+function problemCode(body: unknown): string {
+  if (body && typeof body === "object") {
+    const record = body as { detail?: unknown; type?: unknown };
+    if (typeof record.detail === "string" && record.detail.length > 0 && !record.detail.includes(" ")) {
+      return record.detail;
+    }
+    if (typeof record.type === "string") {
+      const marker = "/problems/";
+      const index = record.type.lastIndexOf(marker);
+      if (index >= 0) {
+        return record.type.slice(index + marker.length);
+      }
+    }
+  }
+  return "request_failed";
+}
+
+function redirectIfUnauthorized(status: number, apiPath: string): void {
+  const path = window.location.pathname;
+  if (status === 401 && apiPath.split("?")[0] === "/me" && !path.startsWith("/login") && path !== "/logout") {
+    window.location.replace("/logout");
   }
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
   const response = await fetch(`/api/worthly${path}`, { credentials: "same-origin" });
-  redirectIfUnauthorized(response.status);
-  if (!response.ok) {
-    throw new ApiError(response.status, "request_failed");
-  }
+  redirectIfUnauthorized(response.status, path);
   const body = await parseBody<T>(response);
+  if (!response.ok) {
+    throw new ApiError(response.status, problemCode(body));
+  }
   if (body == null) {
     throw new ApiError(response.status, "empty_response");
   }
@@ -52,16 +74,17 @@ export async function apiSend<T>(method: string, path: string, body?: unknown): 
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  redirectIfUnauthorized(response.status);
+  redirectIfUnauthorized(response.status, path);
+  const parsed = await parseBody<T>(response);
   if (!response.ok) {
-    throw new ApiError(response.status, "request_failed");
+    throw new ApiError(response.status, problemCode(parsed));
   }
-  return parseBody<T>(response);
+  return parsed;
 }
 
 export async function downloadCsv(path: string, filename: string): Promise<void> {
   const response = await fetch(`/api/worthly${path}`, { credentials: "same-origin" });
-  redirectIfUnauthorized(response.status);
+  redirectIfUnauthorized(response.status, path);
   if (!response.ok) {
     throw new ApiError(response.status, "request_failed");
   }

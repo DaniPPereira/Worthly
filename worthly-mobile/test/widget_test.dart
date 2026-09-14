@@ -37,6 +37,6 @@ void main() {
     );
     expect(find.text('Sign in'), findsOneWidget);
     expect(find.text('Password'), findsNothing);
-    expect(find.textContaining('never collects your password'), findsOneWidget);
+    expect(find.textContaining('never entered here'), findsOneWidget);
   });
 }

@@ -161,7 +161,7 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'Read through your read-only Trading 212 key, which never leaves your server. Worthly cannot place orders.',
+                'Read through your read-only Trading 212 key, which never leaves your server. Worthly cannot place orders. Trading 212 Crypto is a separate account and is not in the Public API, so those balances cannot appear here.',
                 style: TextStyle(fontSize: 11, height: 1.5, color: Color(0xA8F4F1EA)),
               ),
             ],

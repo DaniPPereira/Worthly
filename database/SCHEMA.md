@@ -73,7 +73,8 @@ provider_connection (
   external_session_id_encrypted bytea null,
   consent_expires_at timestamptz null,
   last_successful_sync_at timestamptz null,
-  last_error_code text null
+  last_error_code text null,
+  credentials_encrypted bytea null -- AES-GCM blob for Trading 212 API key/secret
 )
 
 -- v1: at most one Trading 212 connection per owner
@@ -94,7 +95,9 @@ authorization_attempt (
 )
 ```
 
-Trading 212 secrets stay in server secret storage, never in these tables.
+Trading 212 API key/secret are encrypted in
+`credentials_encrypted`. They never appear in API responses. Enable
+Banking session identifiers stay on `external_session_id_encrypted`.
 
 ## banking
 
@@ -168,6 +171,7 @@ transaction (
   currency char(3) not null,
   merchant text null,
   description text null,
+  location text null,
   reporting_at timestamptz not null,
   category_id uuid null references category(id),
   categorization_source text not null, -- MANUAL | RULE | HEURISTIC | UNCATEGORIZED

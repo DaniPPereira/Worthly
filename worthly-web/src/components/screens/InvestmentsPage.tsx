@@ -111,6 +111,7 @@ export function InvestmentsPage() {
           </div>
           <div style={{ fontSize: 11, lineHeight: 1.5, color: "rgba(244,241,234,.66)", marginTop: 20 }}>
             Read through your read-only Trading 212 key, which never leaves your server. Worthly cannot place orders.
+            Trading 212 Crypto is a separate account and is not in the Public API, so those balances cannot appear here.
           </div>
         </div>
         <div className="card" style={{ padding: 20 }}>

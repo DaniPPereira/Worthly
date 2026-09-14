@@ -9,6 +9,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -24,6 +25,12 @@ public class ProblemDetailsExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ProblemDetail> handleValidation(
             MethodArgumentNotValidException ex, HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "invalid_request", request);
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ProblemDetail> handleUnreadable(
+            HttpMessageNotReadableException ex, HttpServletRequest request) {
         return problem(HttpStatus.BAD_REQUEST, "invalid_request", request);
     }
 
@@ -45,6 +52,7 @@ public class ProblemDetailsExceptionHandler {
     private static ResponseEntity<ProblemDetail> problem(HttpStatus status, String code, HttpServletRequest request) {
         ProblemDetail detail = ProblemDetail.forStatus(status);
         detail.setTitle(status.getReasonPhrase());
+        detail.setDetail(code);
         detail.setType(URI.create("https://worthly.local/problems/" + code));
         detail.setProperty("correlationId", correlationId());
         detail.setInstance(URI.create(request.getRequestURI()));

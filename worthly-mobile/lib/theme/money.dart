@@ -59,6 +59,8 @@ class MoneyFmt {
     return '${negative ? '-' : ''}$whole.${frac.toString().padLeft(2, '0')}';
   }
 
+  static String add(String left, String right) => fromCents(cents(left) + cents(right));
+
   static String weight(String part, String total) {
     final p = cents(part).abs();
     final t = cents(total).abs();

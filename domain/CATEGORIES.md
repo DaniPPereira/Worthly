@@ -48,7 +48,9 @@ absolute amount in its original currency.
    first). An exact-merchant `EQUALS` rule is just a rule; it has no
    extra implicit rank beyond priority.
 3. System heuristic.
-4. `uncategorized`.
+4. `uncategorized`. Uncategorized **DEBIT** defaults to economic type
+   `EXPENSE`; uncategorized **CREDIT** defaults to `INCOME`. That uses
+   the provider credit/debit indicator, not the amount sign.
 
 Rules never overwrite a manual choice. Re-import/sync re-applies 2–4
 only when `categorization_source` is not `MANUAL`.

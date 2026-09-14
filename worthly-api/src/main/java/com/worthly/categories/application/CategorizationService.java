@@ -76,10 +76,17 @@ public class CategorizationService {
     }
 
     public String economicTypeFor(CategoryEntity category) {
+        return economicTypeFor(category, null);
+    }
+
+    public String economicTypeFor(CategoryEntity category, String direction) {
         CategoryEntity current = category;
         while (current != null) {
+            if ("uncategorized".equals(current.getCode())) {
+                return "CREDIT".equals(direction) ? "INCOME" : "EXPENSE";
+            }
             String mapped = mapCode(current.getCode());
-            if (!"OTHER".equals(mapped) || "uncategorized".equals(current.getCode())) {
+            if (!"OTHER".equals(mapped)) {
                 return mapped;
             }
             current = current.getParentId() == null ? null : categories.findById(current.getParentId()).orElse(null);
@@ -125,7 +132,7 @@ public class CategorizationService {
     private void assign(TransactionEntity transaction, CategoryEntity category, String source) {
         transaction.setCategoryId(category.getId());
         transaction.setCategorizationSource(source);
-        transaction.setEconomicType(economicTypeFor(category));
+        transaction.setEconomicType(economicTypeFor(category, transaction.getDirection()));
     }
 
     private boolean matches(CategorizationRuleEntity rule, TransactionEntity transaction) {

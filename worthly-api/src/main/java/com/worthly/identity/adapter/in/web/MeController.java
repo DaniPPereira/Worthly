@@ -54,7 +54,7 @@ public class MeController {
     }
 
     public record OwnerResponse(UUID id, String email, String reportingTimezone, String reportingCurrency) {
-        static OwnerResponse from(Owner owner) {
+        public static OwnerResponse from(Owner owner) {
             return new OwnerResponse(
                     owner.id(), owner.email(), owner.reportingTimezone(), owner.reportingCurrency());
         }

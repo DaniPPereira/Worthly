@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,6 +37,23 @@ class AuthFlowIT extends AbstractIntegrationTest {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Test
+    void successfulLoginWithoutSavedRequestRedirectsToWebOrigin() throws Exception {
+        mockMvc.perform(post("/login")
+                        .param("username", OWNER_EMAIL)
+                        .param("password", OWNER_PASSWORD)
+                        .with(csrf()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("http://localhost:3000/"));
+    }
+
+    @Test
+    void rootRedirectsToWebOrigin() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("http://localhost:3000/"));
+    }
 
     @Test
     void authorizationCodePkceIssuesBearerAndProtectsPreferences() throws Exception {

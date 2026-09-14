@@ -22,9 +22,13 @@ class UnauthorizedApiIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void registerEndpointDoesNotExist() throws Exception {
+    void registerIsPublicAndOtherApisStayProtected() throws Exception {
+        mockMvc.perform(get("/register")).andExpect(status().isOk());
         mockMvc.perform(post("/register")).andExpect(status().isForbidden());
-        mockMvc.perform(post("/api/v1/register")).andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/v1/register")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/v1/connections")).andExpect(status().isUnauthorized());
     }
 }

@@ -14,6 +14,16 @@ void main() {
     expect(Period.monthRange('2024-02').to, '2024-02-29');
   });
 
+  test('shiftMonthKey walks calendar months', () {
+    expect(Period.shiftMonthKey('2026-01', -1), '2025-12');
+    expect(Period.shiftMonthKey('2026-12', 1), '2027-01');
+    expect(Period.shiftMonthKey('2026-09', 0), '2026-09');
+  });
+
+  test('ymd round-trips a calendar date', () {
+    expect(Period.ymd(Period.parseYmd('2026-09-14')), '2026-09-14');
+  });
+
   test('instant formatting in UTC is dated, not relative', () {
     expect(Period.instant('2026-09-12T18:20:00Z', 'UTC'), '12 Sep, 18:20');
     expect(Period.day('2026-09-12T18:20:00Z', 'UTC'), '12 Sep');

@@ -83,7 +83,7 @@ clients; the BFF keeps browser tokens out of JavaScript.
 ## Not chosen
 
 -   Third-party cloud IdP: unnecessary external dependency for
-    single-owner self-hosted v1.
+    self-hosted v1.
 -   JWT in browser localStorage: rejected due to token theft exposure.
 -   Separate auth stacks for Web/Mobile: rejected due to duplicated
     policy.

@@ -7,13 +7,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 @Service
 public class EnableBankingDiscoveryService {
 
+    private static final Logger log = LoggerFactory.getLogger(EnableBankingDiscoveryService.class);
     private static final String SANTANDER_PT = "Banco Santander Totta";
+    private static final String ALL_COUNTRIES = "*";
 
     private final EnableBankingGateway gateway;
     private final WorthlyProperties.EnableBanking properties;
@@ -27,13 +31,35 @@ public class EnableBankingDiscoveryService {
     public List<EnableBankingModels.DiscoveredBank> listV1Banks(String country) {
         requireConfigured();
         String normalized = normalizeCountry(country);
-        return discover(normalized).stream().filter(bank -> isV1Bank(bank, normalized)).toList();
+        List<EnableBankingModels.DiscoveredBank> discovered = discover(normalized);
+        List<EnableBankingModels.DiscoveredBank> v1 =
+                discovered.stream().filter(bank -> isV1Bank(bank, normalized)).toList();
+        if (!v1.isEmpty()) {
+            return v1;
+        }
+        List<EnableBankingModels.DiscoveredBank> mocks =
+                discovered.stream().filter(EnableBankingDiscoveryService::isMockBank).toList();
+        if (mocks.isEmpty()) {
+            mocks = discover(ALL_COUNTRIES).stream()
+                    .filter(EnableBankingDiscoveryService::isMockBank)
+                    .toList();
+        }
+        log.info(
+                "No Santander/Revolut ASPSPs for {}; Enable Banking returned {} banks, {} mock/sandbox connectable",
+                normalized,
+                discovered.size(),
+                mocks.size());
+        return mocks;
     }
 
     public EnableBankingModels.DiscoveredBank requireV1Bank(String name, String country) {
         String normalized = normalizeCountry(country);
         return listV1Banks(normalized).stream()
-                .filter(bank -> bank.name().equals(name) && normalized.equalsIgnoreCase(bank.country()))
+                .filter(bank -> name.equals(bank.name()))
+                .filter(bank -> bank.country() == null
+                        || bank.country().isBlank()
+                        || normalized.equalsIgnoreCase(bank.country())
+                        || isMockBank(bank))
                 .findFirst()
                 .orElseThrow(() -> ApiException.of(HttpStatus.BAD_REQUEST, "unsupported_bank"));
     }
@@ -49,6 +75,14 @@ public class EnableBankingDiscoveryService {
             return true;
         }
         return bank.name().startsWith("Revolut");
+    }
+
+    public static boolean isMockBank(EnableBankingModels.DiscoveredBank bank) {
+        if (bank == null || bank.name() == null) {
+            return false;
+        }
+        String name = bank.name().toLowerCase(Locale.ROOT);
+        return name.contains("mock") || name.contains("sandbox");
     }
 
     private List<EnableBankingModels.DiscoveredBank> discover(String country) {

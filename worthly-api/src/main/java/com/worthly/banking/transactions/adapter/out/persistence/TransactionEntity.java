@@ -43,6 +43,9 @@ public class TransactionEntity {
     @Column(columnDefinition = "text")
     private String description;
 
+    @Column(columnDefinition = "text")
+    private String location;
+
     @Column(name = "reporting_at", nullable = false)
     private Instant reportingAt;
 
@@ -150,6 +153,14 @@ public class TransactionEntity {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getLocation() {
+        return location;
+    }
+
+    public void setLocation(String location) {
+        this.location = location;
     }
 
     public Instant getReportingAt() {

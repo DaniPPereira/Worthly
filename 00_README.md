@@ -3,7 +3,7 @@
 **Status:** Canonical engineering specification\
 **Product:** Worthly --- self-hosted personal finance platform\
 **Clients:** Worthly Web + Worthly Mobile\
-**Version:** 4.1
+**Version:** 4.2
 
 The Markdown/YAML/SQL files in this repository are canonical. The
 consolidated DOCX is generated documentation and MUST NOT override them.
@@ -20,16 +20,17 @@ consolidated DOCX is generated documentation and MUST NOT override them.
 -   Docker Compose deployment
 -   Enable Banking AIS for Santander Portugal + Revolut
 -   Trading 212 Public API, read-only
--   Single owner in v1
+-   Multi-user tenancy with public registration
 -   Europe/Lisbon as the owner's reporting timezone by default;
     configurable
 -   EUR as reporting currency by default; configurable
--   Provider credentials only in backend
+-   Provider bank passwords never collected in Worthly; Trading 212
+    read-only keys are entered in the apps and encrypted at rest
 -   No payment initiation or trading in v1
 
 ## Authentication decision
 
-Worthly owns one local identity and exposes standards-based OAuth/OIDC
+Worthly owns local identities and exposes standards-based OAuth/OIDC
 endpoints.
 
 -   **Web:** server-side/BFF session using Secure + HttpOnly + SameSite
@@ -39,11 +40,11 @@ endpoints.
     storage.
 -   **API:** OAuth2 Resource Server; Bearer access token only. The BFF
     `web_session` cookie is not an API credential.
--   **Owner:** bootstrapped once from server-side secret files. Public
-    registration does not exist.
+-   **Registration:** `POST /api/v1/register` creates a user. Optional
+    bootstrap secrets may seed the first account on an empty database.
 
 See `adr/ADR-002-authentication.md` and
-`adr/ADR-003-single-owner-bootstrap.md`.
+`adr/ADR-007-multi-user-registration.md`.
 
 ## Implementation order
 

@@ -64,6 +64,17 @@ export function absAmount(amount: string): string {
   return amount.trim().startsWith("-") ? amount.trim().slice(1) : amount.trim();
 }
 
+export function addAmounts(left: string, right: string): string {
+  const a = parseParts(left);
+  const b = parseParts(right);
+  const leftMag = BigInt(a.integer) * 100n + BigInt(a.fraction);
+  const rightMag = BigInt(b.integer) * 100n + BigInt(b.fraction);
+  const sum = (a.negative ? -leftMag : leftMag) + (b.negative ? -rightMag : rightMag);
+  const negative = sum < 0n;
+  const mag = negative ? -sum : sum;
+  return `${negative ? "-" : ""}${(mag / 100n).toString()}.${(mag % 100n).toString().padStart(2, "0")}`;
+}
+
 export function groupByCurrency<T>(items: T[], currencyOf: (item: T) => string): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const item of items) {

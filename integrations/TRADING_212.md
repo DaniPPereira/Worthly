@@ -8,8 +8,12 @@ Live: `https://live.trading212.com/api/v0`
 ## Authentication
 
 Basic authentication using Base64 of API key + secret as documented by
-Trading 212. Secret only in backend. Dedicated read-only key. IP
-restrict to Worthly egress IP when feasible.
+Trading 212. Dedicated read-only key. IP restrict to Worthly egress IP
+when feasible.
+
+Users paste the key and secret in web or mobile Connections. Worthly
+encrypts the pair at rest (`provider_connection.credentials_encrypted`)
+and never returns it to clients, logs or audit metadata.
 
 ## V1 endpoints
 
@@ -24,9 +28,13 @@ Worthly exposes NO order placement endpoint.
 
 ## Account support
 
-Public API currently applies to supported Invest/Stocks ISA account
-types per provider documentation. Worthly must fail configuration
-clearly if account type/API access is unsupported.
+Public API currently applies to Invest and Stocks ISA only. Trading 212
+Crypto is a separate account (Trading 212 Markets Ltd) and is **not**
+exposed by this API. Worthly cannot import crypto wallets, holdings or
+cash from that product.
+
+Worthly must fail configuration clearly if account type/API access is
+unsupported.
 
 ## Rate limits
 
@@ -44,26 +52,23 @@ isolated in adapter DTOs.
 
 ## Connection lifecycle
 
-Trading 212 uses a **configuration-backed connection**.
+Trading 212 is connected from the app, not by writing secrets into the
+server environment.
 
-At application startup and whenever provider configuration is refreshed:
+1. Authenticated `POST /connections/trading-212` with `{ apiKey, apiSecret }`.
+2. Upsert exactly one `(user, TRADING_212)` `provider_connection`.
+3. Encrypt credentials at rest. Never include them in `Connection`
+   responses.
+4. Validate with a lightweight `accountSummary` call. Valid credentials
+   -> `ACTIVE`. HTTP 401/403 -> `ERROR`. Other failures -> `ERROR` with
+   `last_error_code`.
+5. If stored credentials are absent (and no local/IT env fallback),
+   preserve history and set `CONFIGURATION_REQUIRED`. Never delete the
+   connection row because secrets disappeared.
+6. Startup reconciliation does not auto-create a Trading 212 connection
+   from server env for every user.
 
-1. Resolve the owner.
-2. Check whether both Trading 212 API key and secret are present in
-   server-side secret/configuration storage.
-3. Upsert exactly one `(owner, TRADING_212)` `provider_connection`.
-4. If credentials are present, perform a lightweight authenticated
-   validation at first sync/configuration check. Valid credentials ->
-   `ACTIVE`. HTTP 401/403 from Trading 212 -> `ERROR` with
-   `last_error_code`. Other transient failures do not change a previous
-   `ACTIVE` until the sync run classifies them.
-5. If credentials are absent, preserve history and set
-   `CONFIGURATION_REQUIRED`. Never delete the connection row because
-   secrets disappeared.
-6. Never persist API key/secret in `provider_connection`, logs, audit
-   metadata, browser or mobile storage.
-
-The database MUST enforce uniqueness for the owner's Trading 212
+The database MUST enforce uniqueness for the user's Trading 212
 connection (`uq_provider_connection_t212` in `database/SCHEMA.md`).
 
 This lifecycle is different from Enable Banking consent-backed

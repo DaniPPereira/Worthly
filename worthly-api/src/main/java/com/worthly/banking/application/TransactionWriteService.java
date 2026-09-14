@@ -59,7 +59,7 @@ public class TransactionWriteService {
                 CategoryEntity category = categorization.requireVisible(userId, categoryId);
                 transaction.setCategoryId(category.getId());
                 transaction.setCategorizationSource("MANUAL");
-                transaction.setEconomicType(categorization.economicTypeFor(category));
+                transaction.setEconomicType(categorization.economicTypeFor(category, transaction.getDirection()));
             }
         }
         if (body.has("notes")) {

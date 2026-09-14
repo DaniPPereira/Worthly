@@ -105,7 +105,18 @@ class CategorizationServiceTest {
         service.applyAutomatic(userId, tx);
         assertThat(tx.getCategoryId()).isEqualTo(uncategorized.getId());
         assertThat(tx.getCategorizationSource()).isEqualTo("UNCATEGORIZED");
-        assertThat(tx.getEconomicType()).isEqualTo("OTHER");
+        assertThat(tx.getEconomicType()).isEqualTo("EXPENSE");
+    }
+
+    @Test
+    void uncategorizedCreditDefaultsToIncome() {
+        when(rules.findByUserIdAndEnabledIsTrueOrderByPriorityAsc(userId)).thenReturn(List.of());
+        when(categories.findByCode("uncategorized")).thenReturn(Optional.of(uncategorized));
+        TransactionEntity tx = transaction("Employer Test", "Payroll");
+        tx.setDirection("CREDIT");
+        service.applyAutomatic(userId, tx);
+        assertThat(tx.getEconomicType()).isEqualTo("INCOME");
+        assertThat(tx.getCategorizationSource()).isEqualTo("UNCATEGORIZED");
     }
 
     private static CategoryEntity category(String code) {

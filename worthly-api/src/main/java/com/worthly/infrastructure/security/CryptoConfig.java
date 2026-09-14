@@ -18,7 +18,6 @@ import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
-import java.util.UUID;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -45,7 +44,7 @@ public class CryptoConfig {
         KeyPair pair = loadOrGenerate(properties);
         RSAKey rsa = new RSAKey.Builder((RSAPublicKey) pair.getPublic())
                 .privateKey((RSAPrivateKey) pair.getPrivate())
-                .keyID(UUID.randomUUID().toString())
+                .keyIDFromThumbprint()
                 .build();
         return new ImmutableJWKSet<>(new JWKSet(rsa));
     }
@@ -57,21 +56,37 @@ public class CryptoConfig {
 
     static KeyPair loadOrGenerate(WorthlyProperties properties) throws Exception {
         if (properties.getOauth().isGenerateEphemeralSigningKey()) {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
-            generator.initialize(2048);
-            return generator.generateKeyPair();
+            return generateRsa();
         }
         String file = properties.getOauth().getSigningKeyFile();
         if (file == null || file.isBlank()) {
             throw new IllegalStateException("worthly.oauth.signing-key-file is required outside tests");
         }
-        String pem = Files.readString(Path.of(file), StandardCharsets.UTF_8);
+        Path path = Path.of(file);
+        if (!Files.exists(path)) {
+            KeyPair pair = generateRsa();
+            byte[] pkcs8 = pair.getPrivate().getEncoded();
+            String body = Base64.getMimeEncoder(64, new byte[] {'\n'}).encodeToString(pkcs8);
+            Files.createDirectories(path.getParent());
+            Files.writeString(
+                    path,
+                    "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n",
+                    StandardCharsets.UTF_8);
+            return pair;
+        }
+        String pem = Files.readString(path, StandardCharsets.UTF_8);
         byte[] pkcs8 = decodePem(pem);
         KeyFactory factory = KeyFactory.getInstance("RSA");
         RSAPrivateCrtKey privateKey = (RSAPrivateCrtKey) factory.generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
         RSAPublicKey publicKey = (RSAPublicKey)
                 factory.generatePublic(new RSAPublicKeySpec(privateKey.getModulus(), privateKey.getPublicExponent()));
         return new KeyPair(publicKey, privateKey);
+    }
+
+    private static KeyPair generateRsa() throws Exception {
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
+        generator.initialize(2048);
+        return generator.generateKeyPair();
     }
 
     private static byte[] decodePem(String pem) {

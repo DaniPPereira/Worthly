@@ -41,6 +41,7 @@ public class Trading212SyncService {
     private static final int MAX_PAGES = 100;
 
     private final ConnectionService connectionService;
+    private final Trading212ConnectionService trading212Connections;
     private final Trading212Gateway gateway;
     private final ProviderConnectionRepository connections;
     private final InvestmentAccountRepository investmentAccounts;
@@ -58,6 +59,7 @@ public class Trading212SyncService {
 
     public Trading212SyncService(
             ConnectionService connectionService,
+            Trading212ConnectionService trading212Connections,
             Trading212Gateway gateway,
             ProviderConnectionRepository connections,
             InvestmentAccountRepository investmentAccounts,
@@ -73,6 +75,7 @@ public class Trading212SyncService {
             ConnectionLock connectionLock,
             PlatformTransactionManager transactionManager) {
         this.connectionService = connectionService;
+        this.trading212Connections = trading212Connections;
         this.gateway = gateway;
         this.connections = connections;
         this.investmentAccounts = investmentAccounts;
@@ -120,7 +123,8 @@ public class Trading212SyncService {
             }
             return null;
         }
-        if (!gateway.credentialsPresent()) {
+        var stored = trading212Connections.credentialsFor(connection);
+        if (stored.isEmpty() && !gateway.credentialsPresent()) {
             connection.setStatus("CONFIGURATION_REQUIRED");
             connection.setLastErrorCode("missing_credentials");
             connections.save(connection);
@@ -129,6 +133,20 @@ public class Trading212SyncService {
             }
             return null;
         }
+        stored.ifPresent(Trading212CredentialContext::set);
+        try {
+            return executeWithCredentials(userId, connectionId, connection, triggerType, failIfBusy);
+        } finally {
+            Trading212CredentialContext.clear();
+        }
+    }
+
+    private SyncRunEntity executeWithCredentials(
+            UUID userId,
+            UUID connectionId,
+            ProviderConnectionEntity connection,
+            String triggerType,
+            boolean failIfBusy) {
         if (syncRuns.existsByConnectionIdAndStatus(connectionId, "RUNNING")
                 || syncRuns.existsByConnectionIdAndStatus(connectionId, "QUEUED")) {
             if (failIfBusy) {
@@ -142,6 +160,7 @@ public class Trading212SyncService {
         run.setStatus("RUNNING");
         run.setCorrelationId(correlationId());
         syncRuns.save(run);
+        boolean snapshotSaved = false;
         try {
             Trading212Models.AccountSummary summary = gateway.accountSummary();
             InvestmentAccountEntity investmentAccount = upsertInvestmentAccount(connection, summary);
@@ -150,6 +169,7 @@ public class Trading212SyncService {
             int imported = 0;
             imported += persistSummarySnapshots(investmentAccount, summary, observedAt);
             imported += persistPositions(investmentAccount, gateway.positions(), summary.currency(), observedAt);
+            snapshotSaved = true;
             int[] history = importHistory(investmentAccount, brokerage);
             imported += history[0];
             run.setStatus("SUCCEEDED");
@@ -170,6 +190,9 @@ public class Trading212SyncService {
             run.setNextRetryAt(ex.retryAt());
             run.setFinishedAt(Instant.now());
             connection.setLastErrorCode("provider_rate_limited");
+            if (snapshotSaved) {
+                connection.setLastSuccessfulSyncAt(Instant.now());
+            }
             connections.save(connection);
             syncRuns.save(run);
             return run;
