@@ -7,6 +7,7 @@ import com.nimbusds.jose.crypto.RSASSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.worthly.infrastructure.config.WorthlyProperties;
+import com.worthly.infrastructure.security.PemSupport;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,7 +16,6 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Date;
 import org.springframework.stereotype.Component;
 
@@ -67,13 +67,7 @@ public class EnableBankingJwtSigner {
             return null;
         }
         String pem = Files.readString(Path.of(file), StandardCharsets.UTF_8);
-        String normalized = pem.replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .replaceAll("\\s", "");
-        if (normalized.isBlank() || pem.contains("BEGIN RSA PRIVATE KEY")) {
-            throw new IllegalStateException("Enable Banking key must be PKCS#8 PEM (BEGIN PRIVATE KEY)");
-        }
-        byte[] pkcs8 = Base64.getDecoder().decode(normalized);
+        byte[] pkcs8 = PemSupport.fromPkcs8Pem(pem);
         KeyFactory factory = KeyFactory.getInstance("RSA");
         return (RSAPrivateKey) factory.generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
     }

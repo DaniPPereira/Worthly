@@ -17,7 +17,6 @@ import java.security.interfaces.RSAPrivateKey;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPublicKeySpec;
-import java.util.Base64;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
@@ -66,16 +65,12 @@ public class CryptoConfig {
         if (!Files.exists(path)) {
             KeyPair pair = generateRsa();
             byte[] pkcs8 = pair.getPrivate().getEncoded();
-            String body = Base64.getMimeEncoder(64, new byte[] {'\n'}).encodeToString(pkcs8);
             Files.createDirectories(path.getParent());
-            Files.writeString(
-                    path,
-                    "-----BEGIN PRIVATE KEY-----\n" + body + "\n-----END PRIVATE KEY-----\n",
-                    StandardCharsets.UTF_8);
+            Files.writeString(path, PemSupport.toPkcs8Pem(pkcs8), StandardCharsets.UTF_8);
             return pair;
         }
         String pem = Files.readString(path, StandardCharsets.UTF_8);
-        byte[] pkcs8 = decodePem(pem);
+        byte[] pkcs8 = PemSupport.fromPkcs8Pem(pem);
         KeyFactory factory = KeyFactory.getInstance("RSA");
         RSAPrivateCrtKey privateKey = (RSAPrivateCrtKey) factory.generatePrivate(new PKCS8EncodedKeySpec(pkcs8));
         RSAPublicKey publicKey = (RSAPublicKey)
@@ -87,15 +82,5 @@ public class CryptoConfig {
         KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
         return generator.generateKeyPair();
-    }
-
-    private static byte[] decodePem(String pem) {
-        String normalized = pem.replace("-----BEGIN PRIVATE KEY-----", "")
-                .replace("-----END PRIVATE KEY-----", "")
-                .replaceAll("\\s", "");
-        if (normalized.isBlank() || pem.contains("BEGIN RSA PRIVATE KEY")) {
-            throw new IllegalStateException("Signing key must be PKCS#8 PEM (BEGIN PRIVATE KEY)");
-        }
-        return Base64.getDecoder().decode(normalized);
     }
 }
