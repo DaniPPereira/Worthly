@@ -31,6 +31,7 @@ public class TotpAuthenticationSuccessHandler extends SavedRequestAwareAuthentic
             throws IOException, ServletException {
         String email = authentication.getName();
         if (!totpService.isEnabled(email)) {
+            PromptLogin.markSatisfied(request, response);
             super.onAuthenticationSuccess(request, response, authentication);
             return;
         }

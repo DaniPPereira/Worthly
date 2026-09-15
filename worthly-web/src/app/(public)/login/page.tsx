@@ -1,11 +1,25 @@
 import { BrandMark, PublicPanel } from "@/components/brand/PublicSplit";
+import { EndOauthSession } from "@/components/brand/EndOauthSession";
+import { config } from "@/lib/config";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; registered?: string }>;
+  searchParams: Promise<{ error?: string; registered?: string; signedout?: string }>;
 }) {
   const params = await searchParams;
+  if (params.signedout === "1") {
+    return (
+      <PublicPanel panelKey="land">
+        <div className="public-brand">
+          <BrandMark />
+          <div className="public-brand__name">Worthly</div>
+        </div>
+        <p className="serif public-panel__title">Start here.</p>
+        <EndOauthSession href={`${config.issuer}/logout`} />
+      </PublicPanel>
+    );
+  }
   const error =
     params.error === "auth"
       ? "Sign-in was cancelled or failed."

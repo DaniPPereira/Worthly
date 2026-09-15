@@ -14,6 +14,7 @@ export function TotpSettings() {
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDisable, setShowDisable] = useState(false);
 
   async function load() {
     try {
@@ -67,6 +68,7 @@ export function TotpSettings() {
       setEnabled(false);
       setSetup(null);
       setRecovery(null);
+      setShowDisable(false);
       setCode("");
     } catch {
       setError("Enter a current authenticator or recovery code to turn this off.");
@@ -76,21 +78,31 @@ export function TotpSettings() {
   }
 
   return (
-    <div style={{ padding: "14px 20px", borderBottom: "1px solid rgba(19,26,25,.05)" }}>
-      <div style={{ fontWeight: 500, fontSize: 13.5 }}>Authenticator app</div>
-      <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 2, lineHeight: 1.45 }}>
-        Optional. Bitwarden, 1Password, Aegis, 2FAS, or Google Authenticator all work. Off by default.
+    <div style={{ borderBottom: "1px solid rgba(19,26,25,.05)" }}>
+      <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", gap: 14 }}>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: "block", fontWeight: 500, fontSize: 13.5 }}>Authenticator app</span>
+          <span style={{ display: "block", fontSize: 11.5, lineHeight: 1.45, color: "var(--faint)", marginTop: 2 }}>
+            {enabled
+              ? "On. Sign-in asks for a code after your password."
+              : "Optional second step. Bitwarden, 1Password, Aegis, 2FAS, or Google Authenticator."}
+          </span>
+        </span>
+        {!enabled && !setup ? (
+          <button type="button" className="btn btn-primary" style={{ height: 32, flex: "none" }} disabled={busy} onClick={() => void start()}>
+            Turn on
+          </button>
+        ) : null}
+        {enabled && !recovery && !setup ? (
+          <button type="button" className="btn btn-ghost" style={{ height: 32, flex: "none" }} disabled={busy} onClick={() => setShowDisable((open) => !open)}>
+            {showDisable ? "Cancel" : "Turn off"}
+          </button>
+        ) : null}
       </div>
-      {error ? <p style={{ color: "var(--loss)", fontSize: 12, margin: "8px 0 0" }}>{error}</p> : null}
-
-      {!enabled && !setup ? (
-        <button type="button" className="btn btn-primary" style={{ height: 32, marginTop: 12 }} disabled={busy} onClick={() => void start()}>
-          Turn on
-        </button>
-      ) : null}
+      {error ? <p style={{ color: "var(--loss)", fontSize: 12, margin: "0 20px 12px" }}>{error}</p> : null}
 
       {setup ? (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ padding: "0 20px 16px" }}>
           <div
             style={{ width: 168, background: "var(--paper)", borderRadius: 12, padding: 8 }}
             dangerouslySetInnerHTML={{ __html: setup.qrSvg }}
@@ -122,7 +134,7 @@ export function TotpSettings() {
       ) : null}
 
       {recovery ? (
-        <div style={{ marginTop: 14 }}>
+        <div style={{ padding: "0 20px 16px" }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 500 }}>Save these recovery codes</p>
           <p className="muted" style={{ margin: "4px 0 8px", fontSize: 12 }}>
             Shown once. Each code signs in if you lose the app.
@@ -140,21 +152,18 @@ export function TotpSettings() {
         </div>
       ) : null}
 
-      {enabled && !recovery ? (
-        <div style={{ marginTop: 12 }}>
-          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-            On. Sign-in will ask for a code after your password.
-          </div>
+      {enabled && !recovery && showDisable ? (
+        <div style={{ padding: "0 20px 16px" }}>
           <input
             value={code}
             onChange={(event) => setCode(event.target.value)}
-            placeholder="Code to turn off"
+            placeholder="Authenticator or recovery code"
             autoComplete="one-time-code"
             maxLength={32}
-            style={fieldStyle}
+            style={{ ...fieldStyle, marginTop: 0 }}
           />
           <button type="button" className="btn btn-danger" style={{ height: 32, marginTop: 10 }} disabled={busy || code.trim().length < 6} onClick={() => void disable()}>
-            Turn off
+            Turn off authenticator
           </button>
         </div>
       ) : null}

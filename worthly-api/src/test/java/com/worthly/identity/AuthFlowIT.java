@@ -42,7 +42,7 @@ class AuthFlowIT extends AbstractIntegrationTest {
     void apiLogoutClearsServletSessionAndReturnsToWebLogin() throws Exception {
         mockMvc.perform(get("/logout"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("http://localhost:3000/login?signedout=1"));
+                .andExpect(redirectedUrl("http://localhost:3000/login"));
     }
 
     @Test

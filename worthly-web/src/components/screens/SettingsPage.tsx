@@ -190,9 +190,11 @@ export function SettingsPage() {
   }
 
   const unread = notifications.filter((item) => item.readAt == null);
+  const activeDevices = devices.filter((item) => !item.revoked);
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+    <div className="settings-grid">
+      <div className="settings-col">
       <Group title="Reporting">
         <Row label="Timezone" sub="Used for the reporting month and timestamps">
           <select className="mono" value={timezone} onChange={(event) => setTimezone(event.target.value)} style={selectStyle}>
@@ -221,34 +223,11 @@ export function SettingsPage() {
         </div>
       </Group>
 
-      <Group title="Security">
-        <TotpSettings />
-        <ToggleRow
-          label="Privacy mode"
-          sub="Hide every monetary value in this browser"
-          on={privacy}
-          onToggle={() => setPrivacy(!privacy)}
-        />
-        <Row label="Sessions & devices" sub="Revoke a device to stop its refresh tokens" value={`${devices.filter((item) => !item.revoked).length}`} />
-        {devices.map((device) => (
-          <div key={device.id} style={{ padding: "12px 20px", borderBottom: "1px solid rgba(19,26,25,.05)", display: "flex", gap: 12, alignItems: "center" }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 500, fontSize: 13 }}>{device.name ?? device.platform ?? "Session"}</div>
-              <div style={{ fontSize: 11.5, color: "var(--faint)" }}>
-                Last seen {formatInstant(device.lastSeenAt, owner.reportingTimezone)}
-                {device.revoked ? " · revoked" : ""}
-              </div>
-            </div>
-            {device.revoked ? null : (
-              <button type="button" className="btn btn-danger" style={{ height: 32 }} onClick={() => void revoke(device.id)}>
-                Revoke
-              </button>
-            )}
-          </div>
-        ))}
-      </Group>
-
       <Group title="Categorization">
+        <Link href="/transactions" style={{ textDecoration: "none", color: "inherit" }}>
+          <Row label="Uncategorized" sub="Open the transaction list filtered to this bucket" value={String(uncategorized)} warn={uncategorized > 0} />
+        </Link>
+        <Row label="Internal transfer matching" sub="Amount, currency and 72h · reversible" value="On" />
         <SectionLabel count={customCategories(categories).length}>Categories</SectionLabel>
         {customCategories(categories).length === 0 ? (
           <p className="muted" style={{ margin: 0, padding: "4px 20px 12px" }}>
@@ -340,12 +319,12 @@ export function SettingsPage() {
           <div className="muted" style={{ margin: "2px 0 8px" }}>
             When the bank memo contains this phrase, assign the category.
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <select
               className="mono"
               value={phraseCategoryId}
               onChange={(event) => setPhraseCategoryId(event.target.value)}
-              style={{ ...selectStyle, flex: "0 0 150px" }}
+              style={{ ...selectStyle, flex: "1 1 140px" }}
             >
               {categories
                 .filter((item) => item.code !== "uncategorized")
@@ -384,10 +363,37 @@ export function SettingsPage() {
             </div>
           );
         })}
-        <Row label="Internal transfer matching" sub="Amount, currency and 72h · reversible" value="On" />
-        <Link href="/transactions" style={{ textDecoration: "none", color: "inherit" }}>
-          <Row label="Uncategorized" value={String(uncategorized)} warn={uncategorized > 0} />
-        </Link>
+      </Group>
+      </div>
+
+      <div className="settings-col">
+      <Group title="Security">
+        <TotpSettings />
+        <ToggleRow
+          label="Privacy mode"
+          sub="Hide every monetary value in this browser"
+          on={privacy}
+          onToggle={() => setPrivacy(!privacy)}
+        />
+        <Row label="Sessions & devices" sub="Revoke a browser to stop its refresh tokens" value={`${activeDevices.length}`} />
+        {activeDevices.length === 0 ? (
+          <p className="muted" style={{ margin: 0, padding: "4px 20px 14px" }}>
+            No active sessions.
+          </p>
+        ) : null}
+        {activeDevices.map((device) => (
+          <div key={device.id} style={{ padding: "12px 20px", borderBottom: "1px solid rgba(19,26,25,.05)", display: "flex", gap: 12, alignItems: "center" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 500, fontSize: 13 }}>{deviceName(device)}</div>
+              <div style={{ fontSize: 11.5, color: "var(--faint)" }}>
+                Last seen {formatInstant(device.lastSeenAt, owner.reportingTimezone)}
+              </div>
+            </div>
+            <button type="button" className="btn btn-danger" style={{ height: 32 }} onClick={() => void revoke(device.id)}>
+              Revoke
+            </button>
+          </div>
+        ))}
       </Group>
 
       <Group title="Notifications">
@@ -454,13 +460,24 @@ export function SettingsPage() {
           <a href="/terms">Terms of Use</a>
         </p>
       </Group>
+      </div>
     </div>
   );
 }
 
+function deviceName(device: Device): string {
+  if (device.name && device.name !== "WEB") {
+    return device.name;
+  }
+  if (device.platform === "WEB" || device.name === "WEB") {
+    return "Browser";
+  }
+  return device.platform ?? "Session";
+}
+
 function Group({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="card" style={{ overflow: "hidden" }}>
+    <div className="card" style={{ overflow: "hidden", minWidth: 0 }}>
       <div className="label" style={{ padding: "15px 20px 13px", borderBottom: "1px solid rgba(19,26,25,.07)" }}>
         {title}
       </div>

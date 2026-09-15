@@ -4,7 +4,7 @@ import { config } from "@/lib/config";
 import { clearAuthCookies } from "@/lib/cookies";
 
 function redirectAfterLogout(): NextResponse {
-  const response = NextResponse.redirect(new URL("/logout", config.issuer), { status: 303 });
+  const response = NextResponse.redirect(new URL("/login?signedout=1", config.origin), { status: 303 });
   clearAuthCookies(response);
   response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
   return response;

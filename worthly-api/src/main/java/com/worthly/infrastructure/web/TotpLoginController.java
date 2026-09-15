@@ -4,6 +4,7 @@ import com.worthly.identity.application.TotpService;
 import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.infrastructure.security.LoginLockoutListener;
 import com.worthly.infrastructure.security.OwnerUserDetailsService;
+import com.worthly.infrastructure.security.PromptLogin;
 import com.worthly.infrastructure.security.SecurityConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -76,6 +77,7 @@ public class TotpLoginController {
         context.setAuthentication(authentication);
         SecurityContextHolder.setContext(context);
         securityContextRepository.saveContext(context, request, response);
+        PromptLogin.markSatisfied(request, response);
         SavedRequestAwareAuthenticationSuccessHandler handler = new SavedRequestAwareAuthenticationSuccessHandler();
         handler.setDefaultTargetUrl(SecurityConfig.webAppOrigin(properties));
         handler.onAuthenticationSuccess(request, response, authentication);

@@ -39,13 +39,13 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
-import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
-import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -62,6 +62,7 @@ public class SecurityConfig {
         OAuth2AuthorizationServerConfigurer authorizationServer = OAuth2AuthorizationServerConfigurer.authorizationServer();
         http.securityMatcher(authorizationServer.getEndpointsMatcher())
                 .with(authorizationServer, configurer -> configurer.oidc(Customizer.withDefaults()))
+                .addFilterAfter(new PromptLoginFilter(), SecurityContextHolderFilter.class)
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
                 .cors(corsConfigurer -> corsConfigurer.configurationSource(cors))
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
@@ -111,6 +112,8 @@ public class SecurityConfig {
                                 "/login/totp",
                                 "/logout",
                                 "/register",
+                                "/favicon.ico",
+                                "/favicon.svg",
                                 "/error",
                                 "/actuator/health",
                                 "/actuator/health/**")
@@ -122,12 +125,7 @@ public class SecurityConfig {
                 .formLogin(form -> form.loginPage("/login")
                         .successHandler(totpAuthenticationSuccessHandler)
                         .permitAll())
-                .logout(logout -> logout.logoutRequestMatcher(
-                                PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/logout"))
-                        .logoutSuccessUrl(webAppOrigin(properties) + "login?signedout=1")
-                        .invalidateHttpSession(true)
-                        .clearAuthentication(true)
-                        .deleteCookies("JSESSIONID"))
+                .logout(AbstractHttpConfigurer::disable)
                 .cors(c -> c.configurationSource(cors))
                 .headers(headers -> headers
                         .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
