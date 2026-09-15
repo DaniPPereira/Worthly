@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CurrencyTabs, EmptyState } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { statusTone, useAppData } from "@/lib/app-data";
+import { isBank, statusTone, useAppData } from "@/lib/app-data";
 import { formatAmount } from "@/lib/money";
 import { formatInstant } from "@/lib/period";
 import type { Account, Balance, WealthSummary } from "@/lib/types";
@@ -51,7 +51,7 @@ export function AccountsPage() {
   const visible = useMemo(() => (accounts ?? []).filter((account) => account.currency === currency), [accounts, currency]);
   const wealthRow = wealth?.totalsByCurrency.find((row) => row.currency === currency);
   const currencies = wealth?.totalsByCurrency.map((row) => row.currency) ?? [];
-  const bankNeedsReview = connections.some((connection) => connection.provider === "ENABLE_BANKING" && connection.status !== "ACTIVE");
+  const bankNeedsReview = connections.some((connection) => isBank(connection) && connection.status !== "ACTIVE");
   const tone = statusTone(bankNeedsReview ? "REAUTH_REQUIRED" : "ACTIVE");
 
   if (!accounts) {
@@ -60,7 +60,7 @@ export function AccountsPage() {
   if (accounts.length === 0) {
     return (
       <EmptyState title="No bank accounts">
-        Brokerage cash lives under Investments. Connect Santander or Revolut from Connections.
+        Brokerage cash lives under Investments. Connect a bank from Connections. Trade Republic or Revolut there are cash accounts, not holdings.
       </EmptyState>
     );
   }

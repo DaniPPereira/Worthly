@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { TransactionDrawer } from "@/components/screens/TransactionDrawer";
 import { EmptyState } from "@/components/ui/Primitives";
 import { apiGet, downloadCsv } from "@/lib/api";
-import { useAppData } from "@/lib/app-data";
+import { isBank, useAppData } from "@/lib/app-data";
 import { formatAmount, formatSignedAmount } from "@/lib/money";
 import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
 import { transactionsHref } from "@/lib/transactions-href";
@@ -253,9 +253,9 @@ export function TransactionsPage() {
         <p className="muted">Loading transactions…</p>
       ) : page.items.length === 0 ? (
         <EmptyState title="No transactions in this view">
-          {connections.some((connection) => connection.provider === "ENABLE_BANKING")
+          {connections.some((connection) => isBank(connection))
             ? "Try another filter, date range, or wait for the next successful sync."
-            : "Connect Santander or Revolut from Connections to import card and account purchases. Trading 212 activity stays under Investments."}
+            : "Connect a bank from Connections to import card and account purchases. Brokerage activity stays under Investments."}
         </EmptyState>
       ) : (
         <div className="card" style={{ overflow: "hidden", borderRadius: 14 }}>

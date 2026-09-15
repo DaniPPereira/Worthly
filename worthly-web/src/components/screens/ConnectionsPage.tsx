@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { EmptyState } from "@/components/ui/Primitives";
 import { ApiError, apiGet, apiSend } from "@/lib/api";
-import { connectionLabel, statusTone, useAppData } from "@/lib/app-data";
+import { connectionLabel, includesHoldings, isBank, isBroker, statusTone, useAppData } from "@/lib/app-data";
 import { formatInstant } from "@/lib/period";
-import type { BankChoice, Connection, SyncRun, SyncRunPage } from "@/lib/types";
+import type { BankChoice, CatalogEntry, Connection, ConnectionCatalog, SyncRun, SyncRunPage } from "@/lib/types";
 
 type LogRow = SyncRun & { provider: string };
 
@@ -17,6 +17,7 @@ export function ConnectionsPage() {
   const { connections, refresh, syncing, owner } = useAppData();
   const searchParams = useSearchParams();
   const [banks, setBanks] = useState<BankChoice[]>([]);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
   const [banksError, setBanksError] = useState<string | null>(null);
   const [log, setLog] = useState<LogRow[]>([]);
   const [handoff, setHandoff] = useState<Connection | null>(null);
@@ -38,6 +39,9 @@ export function ConnectionsPage() {
         setBanks([]);
         setBanksError(err instanceof ApiError ? err.message : "provider_error");
       });
+    void apiGet<ConnectionCatalog>("/connections/catalog?country=PT")
+      .then((page) => setCatalog(page.items))
+      .catch(() => setCatalog([]));
   }, []);
 
   useEffect(() => {
@@ -151,10 +155,22 @@ export function ConnectionsPage() {
   }
 
   const unusedBanks = useMemo(() => {
-    const names = new Set(connections.map((item) => item.institutionName).filter(Boolean));
+    const names = new Set(
+      connections
+        .filter((item) => item.status !== "DISABLED" && isBank(item))
+        .map((item) => item.institutionName)
+        .filter(Boolean),
+    );
     return banks.filter((bank) => !names.has(bank.name));
   }, [banks, connections]);
-  const hasTrading212 = connections.some((item) => item.provider === "TRADING_212");
+  const hasBrokerage = connections.some((item) => isBroker(item) && item.status !== "DISABLED");
+  const connectableBrokers = catalog.filter(
+    (item) =>
+      item.kind === "BROKER" &&
+      item.connectable &&
+      !connections.some((connection) => connection.provider === item.provider && connection.status !== "DISABLED"),
+  );
+  const unavailableHoldings = catalog.filter((item) => item.kind === "BROKER" && !item.connectable);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -174,7 +190,7 @@ export function ConnectionsPage() {
         </div>
       ) : null}
       {connections.length === 0 ? (
-        <EmptyState title="No providers yet">Connect a bank or Trading 212 from the section below.</EmptyState>
+        <EmptyState title="No providers yet">Connect a bank or a brokerage from the sections below.</EmptyState>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
           {connections.map((connection) => (
@@ -188,21 +204,21 @@ export function ConnectionsPage() {
               onPurge={() => setConfirmPurge(connection)}
               onReauth={() => setHandoff(connection)}
               onReplaceTrading212={
-                connection.provider === "TRADING_212" && (connection.status === "CONFIGURATION_REQUIRED" || connection.status === "ERROR")
+                isBroker(connection) && (connection.status === "CONFIGURATION_REQUIRED" || connection.status === "ERROR")
                   ? () => {
                       setT212Error(null);
                       setT212Open(true);
                     }
                   : undefined
               }
-              t212Error={connection.provider === "TRADING_212" ? t212Error : null}
+              t212Error={isBroker(connection) ? t212Error : null}
             />
           ))}
         </div>
       )}
       <div className="card" style={{ padding: 20 }}>
         <div className="label">Connect a bank</div>
-        {unusedBanks.length > 0 || !hasTrading212 ? (
+        {unusedBanks.length > 0 ? (
           <>
             <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
               {unusedBanks.map((bank) => (
@@ -210,8 +226,39 @@ export function ConnectionsPage() {
                   Connect {bank.name}
                 </button>
               ))}
-              {!hasTrading212 ? (
+            </div>
+            {authError ? <p style={{ color: "var(--loss)", fontSize: 13, marginTop: 10, maxWidth: 640 }}>{authError}</p> : null}
+            <p className="muted" style={{ marginTop: 12 }}>
+              Open Banking imports cash and card payments. Trade Republic and Revolut connected here are bank accounts,
+              not investment portfolios.
+            </p>
+          </>
+        ) : banksError === "configuration_required" ? (
+          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
+            Banks are added through Enable Banking (Open Banking). This server has no Enable Banking application yet, so
+            the bank buttons cannot appear. Create an app at enablebanking.com, put its application ID and RSA private
+            key on the API, restart Worthly, then refresh this page. You still log in at the bank — Worthly never sees
+            that password.
+          </p>
+        ) : banksError ? (
+          <p className="muted" style={{ marginTop: 12 }}>
+            Banks could not be loaded ({banksError.replaceAll("_", " ")}). Try again after the API can reach Enable Banking.
+          </p>
+        ) : banks.length === 0 ? (
+          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
+            Enable Banking is configured, but this app did not return a supported bank for Portugal. Real Santander,
+            Revolut and Trade Republic need those ASPSPs enabled on the Production Enable Banking application.
+          </p>
+        ) : (
+          <p className="muted" style={{ marginTop: 12 }}>All supported banks are already connected.</p>
+        )}
+      </div>
+      <div className="card" style={{ padding: 20 }}>
+        <div className="label">Connect a brokerage</div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+          {connectableBrokers.map((item) => (
                 <button
+                  key={item.id}
                   type="button"
                   className="btn btn-primary"
                   onClick={() => {
@@ -219,35 +266,18 @@ export function ConnectionsPage() {
                     setT212Open(true);
                   }}
                 >
-                  Connect Trading 212
+                  Connect {item.name}
                 </button>
-              ) : null}
-            </div>
-            {authError ? <p style={{ color: "var(--loss)", fontSize: 13, marginTop: 10, maxWidth: 640 }}>{authError}</p> : null}
-            <p className="muted" style={{ marginTop: 12 }}>
-              Banks open in this browser for Open Banking. Trading 212 uses a read-only API key — Worthly never sees your login password.
-            </p>
-          </>
-        ) : banksError === "configuration_required" && hasTrading212 ? (
-          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
-            Santander and Revolut are added here through Enable Banking (Open Banking). This server has no Enable Banking
-            application yet, so the bank buttons cannot appear. Create an app at enablebanking.com, put its application ID
-            and RSA private key on the API (`WORTHLY_ENABLE_BANKING_APPLICATION_ID` and `WORTHLY_ENABLE_BANKING_PRIVATE_KEY_FILE`),
-            restart Worthly, then refresh this page. You still log in at the bank — Worthly never sees that password.
+              ))}
+        </div>
+        {unavailableHoldings.map((item) => (
+          <p key={item.id} className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
+            {item.name} cannot be connected yet. {item.dataScope}
           </p>
-        ) : banksError && hasTrading212 ? (
-          <p className="muted" style={{ marginTop: 12 }}>
-            Banks could not be loaded ({banksError.replaceAll("_", " ")}). Try again after the API can reach Enable Banking.
-          </p>
-        ) : banks.length === 0 && hasTrading212 ? (
-          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
-            Enable Banking is configured, but this sandbox app did not return Santander or Revolut for Portugal.
-            Open the Mock ASPSP tab in the Enable Banking control panel, add a test bank, then refresh. Real Santander
-            and Revolut need a Production Enable Banking application.
-          </p>
-        ) : (
-          <p className="muted" style={{ marginTop: 12 }}>All supported providers are already connected.</p>
-        )}
+        ))}
+        {hasBrokerage && unavailableHoldings.length === 0 ? (
+          <p className="muted" style={{ marginTop: 12 }}>A brokerage with holdings is already connected.</p>
+        ) : null}
       </div>
       <div className="card" style={{ padding: "20px 20px 8px" }}>
         <div className="label">Synchronization log</div>
@@ -369,10 +399,11 @@ function ConnectionCard({
 }) {
   const tone = statusTone(connection.status);
   const name = connectionLabel(connection);
-  const bank = connection.provider !== "TRADING_212";
+  const bank = isBank(connection);
   const needsAuth = connection.status === "REAUTH_REQUIRED";
   const healthy = connection.status === "ACTIVE";
   const initial = name.slice(0, 1).toUpperCase();
+  const accessLine = bank ? "Open Banking · cash and cards" : "Brokerage API · holdings";
   return (
     <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", borderColor: needsAuth ? "rgba(138,100,18,.35)" : undefined }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -382,7 +413,7 @@ function ConnectionCard({
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{name}</div>
           <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 1 }}>
-            {bank ? "Enable Banking · AIS" : "Public API · read-only key"}
+            {accessLine}
           </div>
         </div>
       </div>
@@ -396,7 +427,10 @@ function ConnectionCard({
           v={connection.consentExpiresAt ? formatInstant(connection.consentExpiresAt, timezone) : bank ? "—" : "Encrypted on server"}
           warn={needsAuth || connection.status === "CONFIGURATION_REQUIRED"}
         />
-        <Row k="Access" v="Read-only" />
+        <Row k="Includes" v={includesHoldings(connection) ? "Holdings" : "Cash only"} />
+        {connection.dataScope ? (
+          <div style={{ fontSize: 11.5, lineHeight: 1.45, color: "#5E6A67" }}>{connection.dataScope}</div>
+        ) : null}
         {connection.lastErrorCode ? (
           <Row k="Last error" v={connection.lastErrorCode.replaceAll("_", " ")} warn />
         ) : null}
@@ -411,7 +445,7 @@ function ConnectionCard({
               Opens {name} in this browser. You confirm there — Worthly never sees your credentials.
             </div>
           </>
-        ) : connection.status === "CONFIGURATION_REQUIRED" || (connection.provider === "TRADING_212" && connection.status === "ERROR" && onReplaceTrading212) ? (
+        ) : connection.status === "CONFIGURATION_REQUIRED" || (isBroker(connection) && connection.status === "ERROR" && onReplaceTrading212) ? (
           <>
             {t212Error ? <p style={{ color: "var(--loss)", fontSize: 12, marginBottom: 8 }}>{t212Error}</p> : null}
             <p className="muted">Add a read-only Trading 212 API key. Worthly encrypts it on the server.</p>
@@ -421,6 +455,10 @@ function ConnectionCard({
               </button>
             ) : null}
           </>
+        ) : connection.status === "DISABLED" ? (
+          <button type="button" className="btn btn-danger" style={{ width: "100%", height: 42 }} onClick={onPurge} disabled={busy}>
+            Delete local data
+          </button>
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
             {healthy || connection.status === "ERROR" ? (
@@ -456,7 +494,7 @@ function Row({ k, v, warn }: { k: string; v: string; warn?: boolean }) {
 }
 
 function consentLabel(connection: Connection): string {
-  if (connection.provider === "TRADING_212") {
+  if (connection.authMode === "CREDENTIALS" || isBroker(connection)) {
     return "Credentials";
   }
   if (connection.status === "REAUTH_REQUIRED") {

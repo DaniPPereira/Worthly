@@ -1,8 +1,16 @@
 package com.worthly.connections.adapter.in.web;
 
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionEntity;
+import com.worthly.connections.application.CatalogEntry;
+import com.worthly.connections.application.ConnectionCatalogService;
 import com.worthly.connections.application.ConnectionService;
 import com.worthly.connections.application.EnableBankingModels;
+import com.worthly.connections.application.InstitutionBrand;
+import com.worthly.connections.application.ProviderAuthMode;
+import com.worthly.connections.application.ProviderCapability;
+import com.worthly.connections.application.ProviderKind;
+import com.worthly.connections.application.ProviderProfile;
+import com.worthly.connections.application.ProviderProfiles;
 import com.worthly.investments.application.Trading212ConnectionService;
 import com.worthly.sync.adapter.out.persistence.SyncRunEntity;
 import com.worthly.sync.application.ConnectionSyncFacade;
@@ -35,14 +43,17 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConnectionController {
 
     private final ConnectionService connectionService;
+    private final ConnectionCatalogService catalogService;
     private final ConnectionSyncFacade syncService;
     private final Trading212ConnectionService trading212Connections;
 
     public ConnectionController(
             ConnectionService connectionService,
+            ConnectionCatalogService catalogService,
             ConnectionSyncFacade syncService,
             Trading212ConnectionService trading212Connections) {
         this.connectionService = connectionService;
+        this.catalogService = catalogService;
         this.syncService = syncService;
         this.trading212Connections = trading212Connections;
     }
@@ -57,6 +68,11 @@ public class ConnectionController {
     @GetMapping("/banks")
     public List<BankChoiceResponse> banks(@RequestParam(defaultValue = "PT") String country) {
         return connectionService.listBanks(country).stream().map(BankChoiceResponse::from).toList();
+    }
+
+    @GetMapping("/catalog")
+    public CatalogResponse catalog(@RequestParam(defaultValue = "PT") String country) {
+        return new CatalogResponse(catalogService.list(country));
     }
 
     @PostMapping("/trading-212")
@@ -131,25 +147,55 @@ public class ConnectionController {
             String institutionCountry,
             Instant lastSuccessfulSyncAt,
             Instant consentExpiresAt,
-            String lastErrorCode) {
+            String lastErrorCode,
+            ProviderKind kind,
+            InstitutionBrand brand,
+            ProviderAuthMode authMode,
+            List<ProviderCapability> capabilities,
+            boolean holdingsIncluded,
+            String dataScope) {
         static ConnectionResponse from(ProviderConnectionEntity entity) {
+            ProviderProfile profile = ProviderProfiles.of(entity);
             return new ConnectionResponse(
                     entity.getId(),
                     entity.getProvider(),
                     entity.getStatus(),
-                    entity.getAspspName(),
+                    profile.displayName(),
                     entity.getAspspCountry(),
                     entity.getLastSuccessfulSyncAt(),
                     entity.getConsentExpiresAt(),
-                    entity.getLastErrorCode());
+                    entity.getLastErrorCode(),
+                    profile.kind(),
+                    profile.brand(),
+                    profile.authMode(),
+                    profile.capabilities(),
+                    profile.holdingsIncluded(),
+                    profile.dataScope());
         }
     }
 
-    public record BankChoiceResponse(String name, String country, String logoUrl) {
+    public record BankChoiceResponse(
+            String name,
+            String country,
+            String logoUrl,
+            ProviderKind kind,
+            InstitutionBrand brand,
+            boolean holdingsIncluded,
+            String dataScope) {
         static BankChoiceResponse from(EnableBankingModels.DiscoveredBank bank) {
-            return new BankChoiceResponse(bank.name(), bank.country(), bank.logoUrl());
+            ProviderProfile profile = ProviderProfiles.forAisBank(bank.name(), bank.country());
+            return new BankChoiceResponse(
+                    bank.name(),
+                    bank.country(),
+                    bank.logoUrl(),
+                    profile.kind(),
+                    profile.brand(),
+                    false,
+                    profile.dataScope());
         }
     }
+
+    public record CatalogResponse(List<CatalogEntry> items) {}
 
     public record BankAuthorizationRequest(
             @NotBlank String name, @Size(min = 2, max = 2) String country, @NotBlank String returnClient) {}

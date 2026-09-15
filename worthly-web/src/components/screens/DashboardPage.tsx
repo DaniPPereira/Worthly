@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CurrencyTabs, EmptyState, MonthNav } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { connectionLabel, useAppData } from "@/lib/app-data";
+import { connectionLabel, includesHoldings, isBank, useAppData } from "@/lib/app-data";
 import { areaPath, linePath, toChartNumber } from "@/lib/chart";
-import { addAmounts, formatAmount, formatRate, formatSignedAmount } from "@/lib/money";
+import { addAmounts, formatAmount, formatRate, formatSignedAmount, isNegative } from "@/lib/money";
 import { formatDay, formatMonthLabel, monthDateRange, monthKeyInZone, monthKeysThrough } from "@/lib/period";
 import { transactionsHref } from "@/lib/transactions-href";
 import type { Account, InvestmentSummary, MonthlyAnalytics, TransactionPage, WealthSummary } from "@/lib/types";
@@ -102,17 +102,17 @@ export function DashboardPage() {
   const cashAvailable = wealthRow ? addAmounts(wealthRow.liquidCash, brokerageCash) : "0.00";
   const portfolioValue = investmentRow?.portfolioValue ?? "0.00";
   const monthlyNow = months.find((item) => item.month === month)?.totalsByCurrency.find((row) => row.currency === currency);
-  const savingsSeries = months.map((item) => {
-    const row = item.totalsByCurrency.find((entry) => entry.currency === currency);
-    return row ? toChartNumber(row.savings) : 0;
-  });
-  const incomeSeries = months.map((item) => toChartNumber(item.totalsByCurrency.find((row) => row.currency === currency)?.income ?? "0"));
-  const expenseSeries = months.map((item) => toChartNumber(item.totalsByCurrency.find((row) => row.currency === currency)?.expenses ?? "0"));
-  const investedSeries = months.map((item) => toChartNumber(item.totalsByCurrency.find((row) => row.currency === currency)?.invested ?? "0"));
-  const rateSeries = months.map((item) => {
-    const rate = item.totalsByCurrency.find((row) => row.currency === currency)?.savingsRate;
-    return rate ? toChartNumber(rate) : 0;
-  });
+  const seriesFor = (pick: (row: NonNullable<typeof monthlyNow>) => string | null) =>
+    keys.map((key) => {
+      const row = months.find((item) => item.month === key)?.totalsByCurrency.find((entry) => entry.currency === currency);
+      const amount = row ? pick(row) : "0";
+      return amount ? toChartNumber(amount) : 0;
+    });
+  const savingsSeries = seriesFor((row) => row.savings);
+  const incomeSeries = seriesFor((row) => row.income);
+  const expenseSeries = seriesFor((row) => row.expenses);
+  const investedSeries = seriesFor((row) => row.invested);
+  const rateSeries = seriesFor((row) => row.savingsRate);
 
   const categoryRows = useMemo(() => {
     const byId = new Map(categories.map((category) => [category.id, category]));
@@ -150,10 +150,52 @@ export function DashboardPage() {
   const maxCat = categoryRows[0]?.amount ?? "0";
   const liquidAccounts = accounts.filter((account) => account.includedInLiquidCash && account.currency === currency);
   const reauthConnection = connections.find((connection) => connection.status === "REAUTH_REQUIRED");
-  const hasBank = connections.some((connection) => connection.provider === "ENABLE_BANKING");
+  const hasBank = connections.some((connection) => isBank(connection));
+  const showInvestments =
+    connections.some((connection) => includesHoldings(connection))
+    || isNonZeroAmount(portfolioValue)
+    || isNonZeroAmount(brokerageCash)
+    || months.some((item) => isNonZeroAmount(item.totalsByCurrency.find((row) => row.currency === currency)?.invested));
+  const monthMetrics = [
+    {
+      label: `Income · ${formatMonthLabel(month)}`,
+      value: monthlyNow ? formatAmount(monthlyNow.income, currency, privacy) : "—",
+      note: month === currentMonth ? "This reporting month" : formatMonthLabel(month),
+      fg: "var(--gain)",
+      spark: linePath(incomeSeries, 120, 26, 4),
+    },
+    {
+      label: `Expenses · ${formatMonthLabel(month)}`,
+      value: monthlyNow ? formatAmount(monthlyNow.expenses, currency, privacy) : "—",
+      note: "Purchases and fees · transfers excluded",
+      fg: "var(--loss)",
+      spark: linePath(expenseSeries, 120, 26, 4),
+    },
+    ...(showInvestments
+      ? [
+          {
+            label: `Invested · ${formatMonthLabel(month)}`,
+            value: monthlyNow ? formatAmount(monthlyNow.invested, currency, privacy) : "—",
+            note: "Cash moved into investments",
+            fg: "var(--brass)",
+            spark: linePath(investedSeries, 120, 26, 4),
+          },
+        ]
+      : []),
+    {
+      label: "Savings rate",
+      value: monthlyNow ? formatRate(monthlyNow.savingsRate, privacy) : "—",
+      note:
+        monthlyNow?.savingsRateReason === "NO_POSITIVE_INCOME"
+          ? "No income this month"
+          : "Share of income kept after expenses",
+      fg: "var(--pine)",
+      spark: linePath(rateSeries, 120, 26, 4),
+    },
+  ];
   const connectedBank = connections.find(
     (connection) =>
-      connection.provider === "ENABLE_BANKING" && (connection.status === "ACTIVE" || connection.status === "ERROR"),
+      isBank(connection) && (connection.status === "ACTIVE" || connection.status === "ERROR"),
   );
   const needsReauth = connections.some((connection) => connection.status === "REAUTH_REQUIRED");
 
@@ -186,7 +228,7 @@ export function DashboardPage() {
         </EmptyState>
       );
     }
-    return <EmptyState title="No balances yet">Connect a bank to see cash, then Trading 212 for investments. Totals stay grouped by currency and include every connected account.</EmptyState>;
+    return <EmptyState title="No balances yet">Connect a bank from Connections to see cash and spending. Totals stay grouped by currency.</EmptyState>;
   }
 
   return (
@@ -221,8 +263,8 @@ export function DashboardPage() {
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(244,241,234,.62)", marginTop: 8 }}>
             {liquidAccounts.length} liquid account{liquidAccounts.length === 1 ? "" : "s"}
-            {addAmounts(brokerageCash, "0.00") !== "0.00" ? " · includes Trading 212 cash" : ""}
-            {" · holdings are current · "}
+            {isNonZeroAmount(brokerageCash) ? " · includes investment cash" : ""}
+            {" · "}
             {currency}
           </div>
           <div style={{ display: "flex", gap: 28, marginTop: "auto", paddingTop: 22, borderTop: "1px solid rgba(244,241,234,.16)" }}>
@@ -237,20 +279,28 @@ export function DashboardPage() {
                 {month === currentMonth ? "This month" : formatMonthLabel(month)}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9 }}>
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="#8FD0B4">
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill={monthlyNow && isNegative(monthlyNow.savings) ? "#E8A090" : "#8FD0B4"}
+                  style={{ transform: monthlyNow && isNegative(monthlyNow.savings) ? "rotate(180deg)" : undefined }}
+                >
                   <path d="M12 5l7 12H5z" />
                 </svg>
-                <span className="mono tabular" style={{ fontSize: 14, color: "#C6E7D6" }}>
+                <span className="mono tabular" style={{ fontSize: 14, color: monthlyNow && isNegative(monthlyNow.savings) ? "#E8A090" : "#C6E7D6" }}>
                   {monthlyNow ? formatSignedAmount(monthlyNow.savings, currency, privacy) : "—"}
                 </span>
               </div>
             </div>
-            <div>
-              <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>Holdings</div>
-              <div className="serif tabular" style={{ fontSize: 27, lineHeight: 1.1, marginTop: 5, color: "#E8C382" }}>
-                {formatAmount(portfolioValue, currency, privacy)}
+            {showInvestments ? (
+              <div>
+                <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>Investments</div>
+                <div className="serif tabular" style={{ fontSize: 27, lineHeight: 1.1, marginTop: 5, color: "#E8C382" }}>
+                  {formatAmount(portfolioValue, currency, privacy)}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
         </div>
         <div className="card" style={{ padding: 20 }}>
@@ -260,29 +310,24 @@ export function DashboardPage() {
               {currency}
             </div>
           </div>
-          <svg viewBox="0 0 460 150" width="100%" height="150" style={{ marginTop: 14, display: "block" }} role="img" aria-label="Monthly savings for the selected currency">
+          <svg viewBox="0 0 460 150" preserveAspectRatio="none" width="100%" height="150" style={{ marginTop: 14, display: "block", overflow: "visible" }} role="img" aria-label="Monthly savings for the selected currency">
             <path d="M0 130h460M0 95h460M0 60h460M0 25h460" stroke="rgba(19,26,25,.06)" strokeWidth="1" />
-            <path d={areaPath(savingsSeries, 460, 150, 12)} fill="rgba(14,74,62,.09)" />
-            <path d={linePath(savingsSeries, 460, 150, 12)} fill="none" stroke="#0E4A3E" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
+            <path d={areaPath(savingsSeries, 460, 150, 12, "zero")} fill="rgba(14,74,62,.09)" />
+            <path d={linePath(savingsSeries, 460, 150, 12, "zero")} fill="none" stroke="#0E4A3E" strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
           </svg>
-          <div className="mono" style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--faint)", marginTop: 6 }}>
+          <div className="mono" style={{ display: "grid", gridTemplateColumns: `repeat(${keys.length}, minmax(0, 1fr))`, fontSize: 10, color: "var(--faint)", marginTop: 6 }}>
             {keys.map((key) => (
-              <span key={key}>{formatMonthLabel(key)}</span>
+              <span key={key} style={{ textAlign: "center" }}>{formatMonthLabel(key)}</span>
             ))}
           </div>
           <div className="muted" style={{ marginTop: 12, paddingTop: 11, borderTop: "1px solid rgba(19,26,25,.07)" }}>
-            Historical net worth is not stored in v1. This chart is monthly savings in {currency} only — currencies are never added together.
+            Income minus spending each month, in {currency}. Transfers between your own accounts are excluded.
           </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
-        {[
-          { label: `Income · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.income, currency, privacy) : "—", note: month === currentMonth ? "This reporting month" : formatMonthLabel(month), fg: "var(--gain)", spark: linePath(incomeSeries, 120, 26, 4) },
-          { label: `Expenses · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.expenses, currency, privacy) : "—", note: "Transfers excluded", fg: "var(--loss)", spark: linePath(expenseSeries, 120, 26, 4) },
-          { label: `Funded · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.invested, currency, privacy) : "—", note: "Cash sent to Trading 212 this month", fg: "var(--brass)", spark: linePath(investedSeries, 120, 26, 4) },
-          { label: "Savings rate", value: monthlyNow ? formatRate(monthlyNow.savingsRate, privacy) : "—", note: monthlyNow?.savingsRateReason ?? "Income minus expenses", fg: "var(--pine)", spark: linePath(rateSeries, 120, 26, 4) },
-        ].map((metric) => (
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${monthMetrics.length}, minmax(0, 1fr))`, gap: 16 }}>
+        {monthMetrics.map((metric) => (
           <div key={metric.label} className="card" style={{ padding: "16px 18px", borderRadius: 14 }}>
             <div className="label">{metric.label}</div>
             <div className="serif tabular" style={{ fontSize: 28, lineHeight: 1.1, color: metric.fg, marginTop: 8 }}>
@@ -304,7 +349,7 @@ export function DashboardPage() {
               <p className="muted">
                 {hasBank
                   ? `No expenses in ${currency} this month.`
-                  : "Card and current-account purchases appear after you connect a bank. Trading 212 is investments only."}
+                  : "Connect a bank to import card and current-account purchases."}
               </p>
             ) : (
               categoryRows.map((row, index) => (
@@ -383,6 +428,13 @@ export function DashboardPage() {
       </div>
     </div>
   );
+}
+
+function isNonZeroAmount(amount: string | null | undefined): boolean {
+  if (!amount) {
+    return false;
+  }
+  return addAmounts(amount, "0.00") !== "0.00";
 }
 
 function barWidth(part: string, total: string): string {

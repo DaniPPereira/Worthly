@@ -14,12 +14,42 @@ export type Connection = {
   lastSuccessfulSyncAt: string | null;
   consentExpiresAt: string | null;
   lastErrorCode: string | null;
+  kind?: "BANK" | "BROKER";
+  brand?: string | null;
+  authMode?: "CONSENT" | "CREDENTIALS";
+  capabilities?: string[];
+  holdingsIncluded?: boolean;
+  dataScope?: string | null;
 };
 
 export type BankChoice = {
   name: string;
   country: string;
   logoUrl: string | null;
+  kind?: "BANK" | "BROKER";
+  brand?: string | null;
+  holdingsIncluded?: boolean;
+  dataScope?: string | null;
+};
+
+export type CatalogEntry = {
+  id: string;
+  provider: string;
+  brand: string | null;
+  name: string;
+  country: string | null;
+  kind: "BANK" | "BROKER";
+  authMode: "CONSENT" | "CREDENTIALS";
+  connectable: boolean;
+  holdingsIncluded: boolean;
+  capabilities: string[];
+  dataScope: string | null;
+  unavailableReason: string | null;
+  logoUrl: string | null;
+};
+
+export type ConnectionCatalog = {
+  items: CatalogEntry[];
 };
 
 export type SyncRun = {
@@ -148,6 +178,7 @@ export type InvestmentSummary = {
 export type Position = {
   instrumentKey: string;
   ticker: string | null;
+  name: string | null;
   quantity: string | null;
   marketValue: { amount: string; currency: string } | null;
   observedAt: string | null;

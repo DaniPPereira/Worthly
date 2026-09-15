@@ -11,6 +11,8 @@ public interface FinancialAccountRepository extends JpaRepository<FinancialAccou
 
     List<FinancialAccountEntity> findByConnectionId(UUID connectionId);
 
+    boolean existsByConnectionId(UUID connectionId);
+
     Optional<FinancialAccountEntity> findByConnectionIdAndIdentificationHashAndActiveIsTrue(
             UUID connectionId, String identificationHash);
 

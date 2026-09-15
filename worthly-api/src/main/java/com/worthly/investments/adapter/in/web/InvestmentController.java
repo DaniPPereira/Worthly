@@ -36,6 +36,7 @@ public class InvestmentController {
                 .map(position -> new PositionResponse(
                         position.instrumentKey(),
                         position.ticker(),
+                        position.name(),
                         position.quantity(),
                         position.marketValue() == null
                                 ? null
@@ -49,7 +50,12 @@ public class InvestmentController {
     public record InvestmentCurrencyResponse(String currency, String cash, String portfolioValue) {}
 
     public record PositionResponse(
-            String instrumentKey, String ticker, String quantity, MoneyResponse marketValue, Instant observedAt) {}
+            String instrumentKey,
+            String ticker,
+            String name,
+            String quantity,
+            MoneyResponse marketValue,
+            Instant observedAt) {}
 
     public record MoneyResponse(String amount, String currency) {}
 }

@@ -21,6 +21,7 @@ import com.worthly.shared.web.ApiException;
 import com.worthly.sync.adapter.out.persistence.SyncRunEntity;
 import com.worthly.sync.adapter.out.persistence.SyncRunRepository;
 import com.worthly.sync.application.ConnectionLock;
+import com.worthly.sync.application.ConnectionSyncAdapter;
 import com.worthly.transfers.application.TransferMatchingService;
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -34,7 +35,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
-public class Trading212SyncService {
+public class Trading212SyncService implements ConnectionSyncAdapter {
 
     public static final String CASH_KEY = "__cash__";
     public static final String PORTFOLIO_KEY = "__portfolio__";
@@ -92,6 +93,12 @@ public class Trading212SyncService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
+    @Override
+    public boolean supports(ProviderConnectionEntity connection) {
+        return Trading212ConnectionService.PROVIDER.equals(connection.getProvider());
+    }
+
+    @Override
     public SyncRunEntity requestSync(UUID userId, UUID connectionId) {
         java.util.concurrent.atomic.AtomicReference<SyncRunEntity> result =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -103,6 +110,7 @@ public class Trading212SyncService {
         return result.get();
     }
 
+    @Override
     public void requestScheduledSync(ProviderConnectionEntity connection) {
         connectionLock.tryWithLock(
                 connection.getId(), () -> runLocked(connection.getUserId(), connection.getId(), "SCHEDULED", false));
@@ -239,11 +247,12 @@ public class Trading212SyncService {
 
     private int persistSummarySnapshots(
             InvestmentAccountEntity account, Trading212Models.AccountSummary summary, Instant observedAt) {
-        saveSnapshot(account.getId(), CASH_KEY, "CASH", BigDecimal.ONE, summary.cash(), summary.currency(), observedAt);
+        saveSnapshot(account.getId(), CASH_KEY, "CASH", null, BigDecimal.ONE, summary.cash(), summary.currency(), observedAt);
         saveSnapshot(
                 account.getId(),
                 PORTFOLIO_KEY,
                 "PORTFOLIO",
+                null,
                 BigDecimal.ONE,
                 summary.portfolioValue(),
                 summary.currency(),
@@ -262,6 +271,7 @@ public class Trading212SyncService {
                     account.getId(),
                     position.instrumentKey(),
                     position.ticker(),
+                    position.name(),
                     position.quantity(),
                     position.marketValue(),
                     position.currency() == null ? fallbackCurrency : position.currency(),
@@ -275,6 +285,7 @@ public class Trading212SyncService {
             UUID accountId,
             String instrumentKey,
             String ticker,
+            String name,
             BigDecimal quantity,
             BigDecimal marketValue,
             String currency,
@@ -283,6 +294,7 @@ public class Trading212SyncService {
         snapshot.setInvestmentAccountId(accountId);
         snapshot.setInstrumentKey(instrumentKey);
         snapshot.setTicker(ticker);
+        snapshot.setName(name);
         snapshot.setQuantity(quantity == null ? BigDecimal.ZERO : quantity);
         snapshot.setMarketValue(marketValue);
         snapshot.setCurrency(currency);

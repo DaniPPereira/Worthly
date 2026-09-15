@@ -19,6 +19,7 @@ and never returns it to clients, logs or audit metadata.
 
 -   `GET /equity/account/summary`
 -   `GET /equity/positions`
+-   `GET /equity/metadata/instruments` (human-readable names; optional, skipped on provider errors)
 -   `GET /equity/history/dividends`
 -   `GET /equity/history/transactions`
 -   `GET /equity/history/orders` only if needed for portfolio

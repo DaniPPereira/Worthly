@@ -157,6 +157,20 @@ paths:
               schema:
                 type: array
                 items: {$ref: '#/components/schemas/BankChoice'}
+  /connections/catalog:
+    get:
+      tags: [Connections]
+      operationId: listConnectionCatalog
+      parameters:
+        - name: country
+          in: query
+          schema: {type: string, default: PT, minLength: 2, maxLength: 2}
+      responses:
+        '200':
+          description: AIS banks plus brokerage adapters, including brands that only share cash
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ConnectionCatalog'}
   /connections/trading-212:
     post:
       tags: [Connections]
@@ -705,22 +719,60 @@ components:
       enum: [ACTIVE, REAUTH_REQUIRED, CONFIGURATION_REQUIRED, ERROR, DISABLED]
     Connection:
       type: object
-      required: [id, provider, status]
+      required: [id, provider, status, kind, holdingsIncluded]
       properties:
         id: {type: string, format: uuid}
-        provider: {type: string, enum: [ENABLE_BANKING, TRADING_212]}
+        provider: {type: string}
         status: {$ref: '#/components/schemas/ConnectionStatus'}
         institutionName: {type: string}
         institutionCountry: {type: string}
         lastSuccessfulSyncAt: {type: string, format: date-time}
         consentExpiresAt: {type: string, format: date-time}
         lastErrorCode: {type: string}
+        kind: {type: string, enum: [BANK, BROKER]}
+        brand: {type: string, enum: [SANTANDER, REVOLUT, TRADE_REPUBLIC, TRADING_212, OTHER]}
+        authMode: {type: string, enum: [CONSENT, CREDENTIALS]}
+        capabilities:
+          type: array
+          items: {type: string, enum: [CASH_ACCOUNTS, TRANSACTIONS, POSITIONS, INVESTMENT_HISTORY]}
+        holdingsIncluded: {type: boolean}
+        dataScope: {type: string}
     BankChoice:
       type: object
-      required: [name, country]
+      required: [name, country, kind, holdingsIncluded]
       properties:
         name: {type: string}
         country: {type: string}
+        logoUrl: {type: string, format: uri}
+        kind: {type: string, enum: [BANK, BROKER]}
+        brand: {type: string, enum: [SANTANDER, REVOLUT, TRADE_REPUBLIC, TRADING_212, OTHER]}
+        holdingsIncluded: {type: boolean}
+        dataScope: {type: string}
+    ConnectionCatalog:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/CatalogEntry'}
+    CatalogEntry:
+      type: object
+      required: [id, provider, name, kind, connectable, holdingsIncluded]
+      properties:
+        id: {type: string}
+        provider: {type: string}
+        brand: {type: string, enum: [SANTANDER, REVOLUT, TRADE_REPUBLIC, TRADING_212, OTHER]}
+        name: {type: string}
+        country: {type: string}
+        kind: {type: string, enum: [BANK, BROKER]}
+        authMode: {type: string, enum: [CONSENT, CREDENTIALS]}
+        connectable: {type: boolean}
+        holdingsIncluded: {type: boolean}
+        capabilities:
+          type: array
+          items: {type: string, enum: [CASH_ACCOUNTS, TRANSACTIONS, POSITIONS, INVESTMENT_HISTORY]}
+        dataScope: {type: string}
+        unavailableReason: {type: string}
         logoUrl: {type: string, format: uri}
     BankAuthorizationRequest:
       type: object
@@ -913,6 +965,7 @@ components:
       properties:
         instrumentKey: {type: string}
         ticker: {type: string}
+        name: {type: string, description: Human-readable instrument name from the broker catalogue}
         quantity: {type: string}
         marketValue: {$ref: '#/components/schemas/Money'}
         observedAt: {type: string, format: date-time}

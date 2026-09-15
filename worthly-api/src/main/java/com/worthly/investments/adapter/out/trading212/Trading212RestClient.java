@@ -13,7 +13,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -67,10 +69,11 @@ public class Trading212RestClient implements Trading212Gateway {
     public List<Trading212Models.Position> positions() {
         JsonNode root = get("/equity/positions");
         JsonNode items = root.isArray() ? root : root.path("items");
+        Map<String, String> names = instrumentNamesQuietly();
         List<Trading212Models.Position> positions = new ArrayList<>();
         if (items.isArray()) {
             for (JsonNode node : items) {
-                positions.add(toPosition(node));
+                positions.add(toPosition(node, names));
             }
         }
         return positions;
@@ -100,9 +103,14 @@ public class Trading212RestClient implements Trading212Gateway {
         return new Trading212Models.HistoryPage(events, next);
     }
 
-    private Trading212Models.Position toPosition(JsonNode node) {
+    private Trading212Models.Position toPosition(JsonNode node, Map<String, String> names) {
         JsonNode instrument = node.path("instrument");
         String ticker = firstNonBlank(text(instrument, "ticker"), text(node, "ticker"));
+        String name = firstNonBlank(
+                ticker == null ? null : names.get(ticker),
+                text(instrument, "name"),
+                text(node, "name"),
+                text(instrument, "shortName"));
         JsonNode wallet = node.path("walletImpact");
         BigDecimal marketValue = firstNonNull(
                 decimal(wallet, "currentValue"),
@@ -113,10 +121,33 @@ public class Trading212RestClient implements Trading212Gateway {
         return new Trading212Models.Position(
                 ticker == null ? "unknown" : ticker,
                 ticker,
+                name,
                 firstNonNull(decimal(node, "quantity"), BigDecimal.ZERO),
                 firstNonNull(decimal(node, "averagePricePaid"), decimal(node, "averagePrice")),
                 marketValue,
                 currency.toUpperCase());
+    }
+
+    private Map<String, String> instrumentNamesQuietly() {
+        try {
+            JsonNode root = get("/equity/metadata/instruments");
+            JsonNode items = root.isArray() ? root : firstArray(root, "items", "instruments");
+            Map<String, String> names = new HashMap<>();
+            if (!items.isArray()) {
+                return names;
+            }
+            for (JsonNode node : items) {
+                String ticker = firstNonBlank(text(node, "ticker"), text(node.path("instrument"), "ticker"));
+                String name = firstNonBlank(text(node, "name"), text(node, "shortName"), text(node, "prettyName"));
+                if (ticker != null && name != null) {
+                    names.put(ticker, name);
+                }
+            }
+            return names;
+        } catch (RuntimeException ex) {
+            log.info("Trading 212 instrument names unavailable: {}", ex.getMessage());
+            return Map.of();
+        }
     }
 
     private Trading212Models.HistoryEvent toTransaction(JsonNode node) {
@@ -207,6 +238,16 @@ public class Trading212RestClient implements Trading212Gateway {
 
     private static String trimSlash(String value) {
         return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
+    }
+
+    private static JsonNode firstArray(JsonNode root, String... fields) {
+        for (String field : fields) {
+            JsonNode value = root.path(field);
+            if (value.isArray()) {
+                return value;
+            }
+        }
+        return root.path(fields[0]);
     }
 
     private static String text(JsonNode node, String field) {

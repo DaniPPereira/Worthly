@@ -1,29 +1,71 @@
-export function linePath(values: number[], width: number, height: number, pad: number): string {
-  if (values.length === 0) {
+export type ChartScale = "zero" | "minmax";
+
+type Point = { x: number; y: number };
+
+function cleanValues(values: number[]): number[] {
+  return values.map((value) => (Number.isFinite(value) ? value : 0));
+}
+
+function chartPoints(
+  values: number[],
+  width: number,
+  height: number,
+  pad: number,
+  scale: ChartScale,
+): { points: Point[]; baselineY: number } {
+  const clean = cleanValues(values);
+  if (clean.length === 0) {
+    return { points: [], baselineY: height - pad };
+  }
+  const min = scale === "zero" ? Math.min(0, ...clean) : Math.min(...clean);
+  const max = scale === "zero" ? Math.max(0, ...clean) : Math.max(...clean);
+  const span = max - min || 1;
+  const innerHeight = height - pad * 2;
+  const yFor = (value: number) => pad + (1 - (value - min) / span) * innerHeight;
+  const n = clean.length;
+  const points = clean.map((value, index) => ({
+    x: n === 1 ? width / 2 : ((index + 0.5) / n) * width,
+    y: yFor(value),
+  }));
+  return { points, baselineY: yFor(scale === "zero" ? 0 : min) };
+}
+
+export function linePath(
+  values: number[],
+  width: number,
+  height: number,
+  pad: number,
+  scale: ChartScale = "minmax",
+): string {
+  const { points } = chartPoints(values, width, height, pad, scale);
+  if (points.length === 0) {
     return "";
   }
-  if (values.length === 1) {
-    const y = height / 2;
-    return `M0 ${y.toFixed(1)} L${width} ${y.toFixed(1)}`;
+  if (points.length === 1) {
+    const y = points[0].y.toFixed(1);
+    return `M0 ${y} L${width} ${y}`;
   }
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  return values
-    .map((value, index) => {
-      const x = (width / (values.length - 1)) * index;
-      const y = height - pad - ((value - min) / span) * (height - pad * 2);
-      return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
+  return points
+    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
     .join(" ");
 }
 
-export function areaPath(values: number[], width: number, height: number, pad: number): string {
-  const line = linePath(values, width, height, pad);
-  if (!line) {
+export function areaPath(
+  values: number[],
+  width: number,
+  height: number,
+  pad: number,
+  scale: ChartScale = "zero",
+): string {
+  const { points, baselineY } = chartPoints(values, width, height, pad, scale);
+  if (points.length === 0) {
     return "";
   }
-  return `${line} L${width} ${height} L0 ${height} Z`;
+  const line = linePath(values, width, height, pad, scale);
+  const first = points[0];
+  const last = points[points.length - 1];
+  const base = baselineY.toFixed(1);
+  return `${line} L${last.x.toFixed(1)} ${base} L${first.x.toFixed(1)} ${base} Z`;
 }
 
 export function toChartNumber(amount: string): number {
@@ -31,5 +73,8 @@ export function toChartNumber(amount: string): number {
   const unsigned = negative ? amount.trim().slice(1) : amount.trim();
   const [integer = "0", fraction = ""] = unsigned.split(".");
   const cents = Number.parseInt(`${integer}${(fraction + "00").slice(0, 2)}`, 10);
+  if (!Number.isFinite(cents)) {
+    return 0;
+  }
   return negative ? -cents : cents;
 }

@@ -128,6 +128,9 @@ class Trading212IT extends AbstractIntegrationTest {
             if ("TRADING_212".equals(connection.get("provider").asText())) {
                 t212Id = connection.get("id").asText();
                 assertThat(connection.get("status").asText()).isEqualTo("ACTIVE");
+                assertThat(connection.get("kind").asText()).isEqualTo("BROKER");
+                assertThat(connection.get("holdingsIncluded").asBoolean()).isTrue();
+                assertThat(connection.get("institutionName").asText()).isEqualTo("Trading 212");
             }
         }
         assertThat(t212Id).isNotBlank();
@@ -155,6 +158,7 @@ class Trading212IT extends AbstractIntegrationTest {
         JsonNode positionList = objectMapper.readTree(positions.getResponse().getContentAsString());
         assertThat(positionList).hasSize(1);
         assertThat(positionList.get(0).get("instrumentKey").asText()).isEqualTo("VWCE_EQ");
+        assertThat(positionList.get(0).get("name").asText()).isEqualTo("Vanguard FTSE All-World UCITS ETF");
         assertThat(positionList.toString()).doesNotContain("__cash__");
 
         MvcResult accounts = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/accounts")
@@ -244,6 +248,11 @@ class Trading212IT extends AbstractIntegrationTest {
                         [{"ticker":"VWCE_EQ","quantity":10,"averagePrice":100,"currentPrice":110,
                           "instrument":{"ticker":"VWCE_EQ","currency":"EUR"},
                           "walletImpact":{"currency":"EUR","currentValue":1100}}]
+                        """)));
+        T212.stubFor(WireMock.get(urlPathEqualTo("/api/v0/equity/metadata/instruments"))
+                .willReturn(okJson(
+                        """
+                        [{"ticker":"VWCE_EQ","name":"Vanguard FTSE All-World UCITS ETF"}]
                         """)));
         T212.stubFor(WireMock.get(urlPathEqualTo("/api/v0/equity/history/transactions"))
                 .willReturn(okJson(

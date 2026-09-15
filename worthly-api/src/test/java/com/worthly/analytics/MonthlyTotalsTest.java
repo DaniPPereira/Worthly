@@ -7,6 +7,7 @@ import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntit
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
@@ -37,6 +38,20 @@ class MonthlyTotalsTest {
         assertThat(rows.get(0).savingsRate()).isEqualTo("74.75");
         assertThat(rows.get(0).savingsRateReason()).isNull();
         assertThat(rows.get(0).invested()).isEqualTo("0.00");
+    }
+
+    @Test
+    void investedCountsBankFundingOnceWhenBrokerageMirrorsTheDeposit() {
+        UUID bank = UUID.fromString("11111111-1111-1111-1111-111111111111");
+        UUID brokerage = UUID.fromString("22222222-2222-2222-2222-222222222222");
+        TransactionEntity sent = tx("INVESTMENT_FUNDING", "911.35");
+        sent.setAccountId(bank);
+        TransactionEntity received = tx("INVESTMENT_FUNDING", "911.35");
+        received.setAccountId(brokerage);
+        List<MonthlyTotals.Row> doubled = MonthlyTotals.of(List.of(sent, received));
+        assertThat(doubled.get(0).invested()).isEqualTo("1822.70");
+        List<MonthlyTotals.Row> once = MonthlyTotals.of(List.of(sent, received), Set.of(brokerage));
+        assertThat(once.get(0).invested()).isEqualTo("911.35");
     }
 
     private static TransactionEntity tx(String economicType, String amount) {

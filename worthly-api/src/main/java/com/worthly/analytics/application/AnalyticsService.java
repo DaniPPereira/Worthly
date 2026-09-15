@@ -21,8 +21,10 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,9 +87,12 @@ public class AnalyticsService {
         ZoneId zone = ZoneId.of(owner.reportingTimezone());
         Instant start = yearMonth.atDay(1).atStartOfDay(zone).toInstant();
         Instant end = yearMonth.plusMonths(1).atDay(1).atStartOfDay(zone).toInstant();
-        List<UUID> accountIds = accounts.findByUserIdOrderByDisplayNameAsc(userId).stream()
+        List<FinancialAccountEntity> owned = accounts.findByUserIdOrderByDisplayNameAsc(userId);
+        List<UUID> accountIds = owned.stream().map(FinancialAccountEntity::getId).toList();
+        Set<UUID> brokerageIds = owned.stream()
+                .filter(account -> "BROKERAGE".equals(account.getType()))
                 .map(FinancialAccountEntity::getId)
-                .toList();
+                .collect(Collectors.toSet());
         List<TransactionEntity> inMonth = new ArrayList<>();
         if (!accountIds.isEmpty()) {
             for (TransactionEntity tx : transactions.findByAccountIdInAndLifecycleStatus(accountIds, "BOOKED")) {
@@ -97,7 +102,8 @@ public class AnalyticsService {
                 }
             }
         }
-        return new MonthlyAnalytics(yearMonth.toString(), owner.reportingTimezone(), MonthlyTotals.of(inMonth));
+        return new MonthlyAnalytics(
+                yearMonth.toString(), owner.reportingTimezone(), MonthlyTotals.of(inMonth, brokerageIds));
     }
 
     private static YearMonth parseMonth(String month) {

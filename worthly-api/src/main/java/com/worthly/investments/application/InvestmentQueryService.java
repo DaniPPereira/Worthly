@@ -89,6 +89,7 @@ public class InvestmentQueryService {
                 .map(snapshot -> new PositionView(
                         snapshot.getInstrumentKey(),
                         snapshot.getTicker(),
+                        snapshot.getName(),
                         snapshot.getQuantity() == null
                                 ? "0"
                                 : snapshot.getQuantity().stripTrailingZeros().toPlainString(),
@@ -110,7 +111,12 @@ public class InvestmentQueryService {
     public record CurrencyTotal(String currency, String cash, String portfolioValue) {}
 
     public record PositionView(
-            String instrumentKey, String ticker, String quantity, MoneyView marketValue, Instant observedAt) {}
+            String instrumentKey,
+            String ticker,
+            String name,
+            String quantity,
+            MoneyView marketValue,
+            Instant observedAt) {}
 
     public record MoneyView(String amount, String currency) {}
 

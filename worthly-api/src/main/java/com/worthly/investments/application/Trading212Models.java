@@ -14,6 +14,7 @@ public final class Trading212Models {
     public record Position(
             String instrumentKey,
             String ticker,
+            String name,
             BigDecimal quantity,
             BigDecimal averagePrice,
             BigDecimal marketValue,

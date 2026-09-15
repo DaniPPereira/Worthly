@@ -3,27 +3,39 @@
 import { useEffect, useMemo, useState } from "react";
 import { CurrencyTabs, EmptyState } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { useAppData } from "@/lib/app-data";
-import { formatAmount, formatSignedAmount, groupByCurrency, weightPercent } from "@/lib/money";
-import { formatDay, monthDateRange, monthKeyInZone } from "@/lib/period";
+import { includesHoldings, isBank, useAppData } from "@/lib/app-data";
+import { compareAmountDesc, formatAmount, formatSignedAmount, groupByCurrency, weightPercent } from "@/lib/money";
+import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
 import type { InvestmentSummary, Position, TransactionPage } from "@/lib/types";
 
+const SLICE_COLORS = ["#0E4A3E", "#2C6B5C", "#4A8878", "#C98F32", "#8A6412", "#5E6A67", "#B8BFBC", "#D9D3C7"];
+const TOP_SLICES = 7;
+
 export function InvestmentsPage() {
-  const { owner, privacy, categories } = useAppData();
+  const { owner, privacy, categories, connections } = useAppData();
   const [summary, setSummary] = useState<InvestmentSummary | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
   const [history, setHistory] = useState<TransactionPage | null>(null);
   const [currency, setCurrency] = useState(owner.reportingCurrency);
 
   const month = monthKeyInZone(owner.reportingTimezone);
-  const { from, to } = monthDateRange(month);
+  const { from } = monthDateRange(shiftMonthKey(month, -5));
+  const { to } = monthDateRange(month);
 
   useEffect(() => {
     let cancelled = false;
     Promise.all([
       apiGet<InvestmentSummary>("/investments/summary"),
       apiGet<Position[]>("/investments/positions"),
-      apiGet<TransactionPage>(`/transactions?from=${from}&to=${to}&size=20`),
+      Promise.all([
+        apiGet<TransactionPage>(`/transactions?economicType=INVESTMENT_FUNDING&from=${from}&to=${to}&size=50`),
+        apiGet<TransactionPage>(`/transactions?economicType=INVESTMENT_WITHDRAWAL&from=${from}&to=${to}&size=50`),
+        apiGet<TransactionPage>(`/transactions?economicType=INCOME&from=${from}&to=${to}&size=50`),
+      ]).then((pages) => {
+        const items = pages.flatMap((page) => page.items);
+        items.sort((left, right) => right.reportingAt.localeCompare(left.reportingAt));
+        return { items, page: 0, size: items.length, total: items.length } as TransactionPage;
+      }),
     ]).then(([nextSummary, nextPositions, nextHistory]) => {
       if (cancelled) {
         return;
@@ -50,11 +62,14 @@ export function InvestmentsPage() {
     positions.filter((position) => position.marketValue),
     (position) => position.marketValue!.currency,
   );
-  const visible = grouped.get(currency) ?? [];
+  const visible = [...(grouped.get(currency) ?? [])].sort((left, right) =>
+    compareAmountDesc(left.marketValue!.amount, right.marketValue!.amount),
+  );
   const portfolioTotal = visible.reduce(
     (sum, position) => sum + BigInt(toCents(position.marketValue!.amount)),
     0n,
   );
+  const slices = allocationSlices(visible, portfolioTotal);
 
   const events = useMemo(() => {
     const dividendIds = new Set(
@@ -64,11 +79,13 @@ export function InvestmentsPage() {
       if (tx.money.currency !== currency) {
         return false;
       }
-      return (
-        tx.economicType === "INVESTMENT_FUNDING" ||
-        tx.economicType === "INVESTMENT_WITHDRAWAL" ||
-        (tx.categoryId != null && dividendIds.has(tx.categoryId))
-      );
+      if (tx.economicType === "INVESTMENT_FUNDING") {
+        return tx.direction === "CREDIT";
+      }
+      if (tx.economicType === "INVESTMENT_WITHDRAWAL") {
+        return tx.direction === "DEBIT";
+      }
+      return tx.categoryId != null && dividendIds.has(tx.categoryId);
     });
   }, [categories, currency, history]);
 
@@ -76,9 +93,25 @@ export function InvestmentsPage() {
     return <p className="muted">Loading investments…</p>;
   }
   if (!row) {
+    const cashOnlyBrokers = connections.filter(
+      (connection) =>
+        isBank(connection) &&
+        connection.status !== "DISABLED" &&
+        (connection.brand === "TRADE_REPUBLIC" || connection.brand === "REVOLUT") &&
+        !includesHoldings(connection),
+    );
+    const names = [
+      ...new Set(
+        cashOnlyBrokers
+          .map((connection) => connection.institutionName)
+          .filter((name): name is string => typeof name === "string" && name.length > 0),
+      ),
+    ];
     return (
       <EmptyState title="No brokerage data">
-        Trading 212 appears here after a read-only key is configured on the server. Worthly cannot place orders.
+        {names.length > 0
+          ? `${names.join(" and ")} ${names.length === 1 ? "is" : "are"} connected as a bank. Open Banking does not include holdings. Connect a brokerage with an official API from Connections.`
+          : "Connect a brokerage from Connections to see holdings here. A bank connection, including Trade Republic or Revolut, is cash only. Worthly cannot place orders."}
       </EmptyState>
     );
   }
@@ -93,7 +126,7 @@ export function InvestmentsPage() {
             {formatAmount(row.portfolioValue, currency, privacy)}
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(244,241,234,.68)", marginTop: 12 }}>
-            Snapshot in {currency}. Cost basis and return are not in the v1 API.
+            Snapshot in {currency}. Cost basis and return are not available from the broker.
           </div>
           <div style={{ display: "flex", gap: 28, marginTop: 24, paddingTop: 18, borderTop: "1px solid rgba(244,241,234,.14)" }}>
             <div>
@@ -110,15 +143,34 @@ export function InvestmentsPage() {
             </div>
           </div>
           <div style={{ fontSize: 11, lineHeight: 1.5, color: "rgba(244,241,234,.66)", marginTop: 20 }}>
-            Read through your read-only Trading 212 key, which never leaves your server. Worthly cannot place orders.
-            Trading 212 Crypto is a separate account and is not in the Public API, so those balances cannot appear here.
+            Read-only. Worthly cannot place orders. Crypto accounts are a separate broker product and are not in this snapshot.
           </div>
         </div>
-        <div className="card" style={{ padding: 20 }}>
-          <div className="label">Holdings in {currency}</div>
-          <p className="muted" style={{ marginTop: 12 }}>
-            Weights are computed within this currency only. A six-month portfolio history is not stored in v1.
-          </p>
+        <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column" }}>
+          <div className="label">Allocation in {currency}</div>
+          {visible.length === 0 ? (
+            <p className="muted" style={{ marginTop: 12 }}>No holdings in this currency.</p>
+          ) : (
+            <div style={{ display: "flex", gap: 28, alignItems: "center", marginTop: 18, flex: 1 }}>
+              <AllocationDonut slices={slices} privacy={privacy} />
+              <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                {slices.map((slice) => (
+                  <div key={slice.label} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 99, background: slice.color, flex: "none" }} />
+                    <span style={{ flex: 1, fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {slice.label}
+                    </span>
+                    <span className="mono" style={{ fontSize: 12, color: "var(--faint)" }}>
+                      {privacy ? "•••" : slice.weight}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="muted" style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(19,26,25,.07)" }}>
+            Current weights in {currency}. Price history and cost basis are not stored yet.
+          </div>
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16 }}>
@@ -155,8 +207,10 @@ export function InvestmentsPage() {
                 }}
               >
                 <span>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{position.ticker ?? position.instrumentKey}</span>
-                  <span style={{ fontSize: 11.5, color: "var(--faint)", marginLeft: 9 }}>{position.instrumentKey}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{positionLabel(position)}</span>
+                  {positionCode(position) ? (
+                    <span style={{ fontSize: 11.5, color: "var(--faint)", marginLeft: 9 }}>{positionCode(position)}</span>
+                  ) : null}
                 </span>
                 <span className="mono" style={{ textAlign: "right", fontSize: 12, color: "var(--faint)" }}>
                   {privacy ? "•••" : weightPercent(position.marketValue!.amount, fromCents(portfolioTotal))}
@@ -172,16 +226,16 @@ export function InvestmentsPage() {
           )}
         </div>
         <div className="card" style={{ padding: "20px 20px 8px" }}>
-          <div className="label">History</div>
+          <div className="label">Cash movements</div>
           {events.length === 0 ? (
-            <p className="muted" style={{ marginTop: 12 }}>Funding, withdrawals and dividends from this month appear here after sync.</p>
+            <p className="muted" style={{ marginTop: 12 }}>No deposits, withdrawals or dividends in the last six months.</p>
           ) : (
             events.map((tx) => (
               <div key={tx.id} style={{ borderTop: "1px solid rgba(19,26,25,.06)", padding: "12px 0", display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 600, fontSize: 12.5 }}>{labelFor(tx.economicType)}</div>
                   <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 1 }}>
-                    {formatDay(tx.reportingAt, owner.reportingTimezone)} · {tx.merchant || tx.description || "Trading 212"}
+                    {formatDay(tx.reportingAt, owner.reportingTimezone)} · {tx.merchant || tx.description || "Broker"}
                   </div>
                 </div>
                 <div className="mono tabular" style={{ fontSize: 12.5, color: tx.direction === "CREDIT" ? "var(--gain)" : "var(--ink)" }}>
@@ -196,6 +250,73 @@ export function InvestmentsPage() {
       </div>
     </div>
   );
+}
+
+type Slice = { label: string; weight: string; share: number; color: string };
+
+function allocationSlices(positions: Position[], totalCents: bigint): Slice[] {
+  if (totalCents === 0n) {
+    return [];
+  }
+  const ranked = positions.map((position) => ({
+    label: positionLabel(position),
+    cents: BigInt(toCents(position.marketValue!.amount)),
+  }));
+  const head = ranked.slice(0, TOP_SLICES);
+  const tail = ranked.slice(TOP_SLICES);
+  const otherCents = tail.reduce((sum, item) => sum + item.cents, 0n);
+  const rows = otherCents > 0n ? [...head, { label: `Other (${tail.length})`, cents: otherCents }] : head;
+  return rows.map((row, index) => ({
+    label: row.label,
+    weight: weightPercent(fromCents(row.cents), fromCents(totalCents)),
+    share: Number(row.cents) / Number(totalCents),
+    color: SLICE_COLORS[index] ?? "#B8BFBC",
+  }));
+}
+
+function AllocationDonut({ slices, privacy }: { slices: Slice[]; privacy: boolean }) {
+  const radius = 42;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
+  return (
+    <svg width="132" height="132" viewBox="0 0 132 132" aria-hidden={privacy}>
+      <circle cx="66" cy="66" r={radius} fill="none" stroke="rgba(19,26,25,.06)" strokeWidth="18" />
+      {slices.map((slice) => {
+        const dash = slice.share * circumference;
+        const circle = (
+          <circle
+            key={slice.label}
+            cx="66"
+            cy="66"
+            r={radius}
+            fill="none"
+            stroke={slice.color}
+            strokeWidth="18"
+            strokeDasharray={`${dash} ${circumference - dash}`}
+            strokeDashoffset={-offset}
+            transform="rotate(-90 66 66)"
+            strokeLinecap="butt"
+          />
+        );
+        offset += dash;
+        return circle;
+      })}
+    </svg>
+  );
+}
+
+function positionLabel(position: Position): string {
+  const name = position.name?.trim();
+  if (name) {
+    return name;
+  }
+  return position.ticker ?? position.instrumentKey;
+}
+
+function positionCode(position: Position): string | null {
+  const code = position.ticker ?? position.instrumentKey;
+  const label = positionLabel(position);
+  return code && code !== label ? code : null;
 }
 
 function toCents(amount: string): string {
@@ -216,6 +337,8 @@ function labelFor(type: string): string {
       return "Deposit";
     case "INVESTMENT_WITHDRAWAL":
       return "Withdrawal";
+    case "INCOME":
+      return "Dividend";
     default:
       return type.replaceAll("_", " ");
   }

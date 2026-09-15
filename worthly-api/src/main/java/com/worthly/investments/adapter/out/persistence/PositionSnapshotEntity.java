@@ -25,6 +25,8 @@ public class PositionSnapshotEntity {
 
     private String ticker;
 
+    private String name;
+
     @Column(nullable = false, precision = 28, scale = 10)
     private BigDecimal quantity;
 
@@ -87,6 +89,14 @@ public class PositionSnapshotEntity {
 
     public void setTicker(String ticker) {
         this.ticker = ticker;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
     }
 
     public BigDecimal getQuantity() {

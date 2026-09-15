@@ -37,7 +37,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 @Service
 public class ConnectionService {
 
-    private static final String PROVIDER = "ENABLE_BANKING";
+    public static final String PROVIDER = "ENABLE_BANKING";
     private final EnableBankingGateway gateway;
     private final EnableBankingDiscoveryService discoveryService;
     private final AuthorizationAttemptRepository attempts;
@@ -96,7 +96,18 @@ public class ConnectionService {
 
     @Transactional(readOnly = true)
     public List<ProviderConnectionEntity> list(UUID userId) {
-        return connections.findByUserIdOrderByUpdatedAtDesc(userId);
+        return connections.findByUserIdOrderByUpdatedAtDesc(userId).stream()
+                .filter(this::visibleInList)
+                .toList();
+    }
+
+    /** Disconnect keeps a Disabled card so the owner can purge. After purge, hide the empty shell. */
+    private boolean visibleInList(ProviderConnectionEntity connection) {
+        if (!"DISABLED".equals(connection.getStatus())) {
+            return true;
+        }
+        return accounts.existsByConnectionId(connection.getId())
+                || investmentAccounts.existsByProviderConnectionId(connection.getId());
     }
 
     public List<EnableBankingModels.DiscoveredBank> listBanks(String country) {
@@ -290,7 +301,7 @@ public class ConnectionService {
             entity.setConnectionId(connection.getId());
             entity.setProviderAccountAlias(uid);
             entity.setIdentificationHash(hash);
-            entity.setType(BankingMappings.accountType(account.cashAccountType()));
+            entity.setType(aisAccountType(account.cashAccountType()));
             entity.setDisplayName(blankToNull(account.name()) == null ? "Account" : account.name());
             entity.setCurrency(account.currency() == null || account.currency().isBlank()
                     ? "EUR"
@@ -306,7 +317,7 @@ public class ConnectionService {
             entity.setIdentificationHash(hash);
         }
         if (account.cashAccountType() != null && !account.cashAccountType().isBlank()) {
-            entity.setType(BankingMappings.accountType(account.cashAccountType()));
+            entity.setType(aisAccountType(account.cashAccountType()));
         }
         if (blankToNull(account.name()) != null) {
             entity.setDisplayName(account.name());
@@ -319,6 +330,11 @@ public class ConnectionService {
         }
         entity.setActive(true);
         return accounts.save(entity);
+    }
+
+    private static String aisAccountType(String cashAccountType) {
+        String type = BankingMappings.accountType(cashAccountType);
+        return "BROKERAGE".equals(type) ? "OTHER" : type;
     }
 
     private static String blankToNull(String value) {

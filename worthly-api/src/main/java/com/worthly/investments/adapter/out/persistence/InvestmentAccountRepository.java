@@ -11,6 +11,8 @@ public interface InvestmentAccountRepository extends JpaRepository<InvestmentAcc
 
     List<InvestmentAccountEntity> findByProviderConnectionId(UUID providerConnectionId);
 
+    boolean existsByProviderConnectionId(UUID providerConnectionId);
+
     Optional<InvestmentAccountEntity> findByProviderConnectionIdAndProviderAccountId(
             UUID providerConnectionId, String providerAccountId);
 }

@@ -35,11 +35,26 @@ export function ownerName(email: string): string {
   return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-export function connectionLabel(connection: Connection): string {
-  if (connection.provider === "TRADING_212") {
-    return "Trading 212";
+export function isBank(connection: Connection): boolean {
+  return connection.kind === "BANK" || (connection.kind == null && connection.provider === "ENABLE_BANKING");
+}
+
+export function isBroker(connection: Connection): boolean {
+  return connection.kind === "BROKER" || (connection.kind == null && connection.provider === "TRADING_212");
+}
+
+export function includesHoldings(connection: Connection): boolean {
+  if (connection.status === "DISABLED") {
+    return false;
   }
-  return connection.institutionName ?? connection.provider;
+  if (connection.holdingsIncluded === true) {
+    return true;
+  }
+  return connection.capabilities?.includes("POSITIONS") === true;
+}
+
+export function connectionLabel(connection: Connection): string {
+  return connection.institutionName ?? (isBroker(connection) ? "Trading 212" : connection.provider);
 }
 
 export function statusTone(status: string): { fg: string; bg: string; bd: string; label: string; dot: string } {

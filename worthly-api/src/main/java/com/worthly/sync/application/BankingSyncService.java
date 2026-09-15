@@ -41,7 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
-public class BankingSyncService {
+public class BankingSyncService implements ConnectionSyncAdapter {
 
     private static final Logger log = LoggerFactory.getLogger(BankingSyncService.class);
     private static final Duration RAW_RETENTION = Duration.ofDays(30);
@@ -99,6 +99,12 @@ public class BankingSyncService {
         this.properties = properties.getEnableBanking();
     }
 
+    @Override
+    public boolean supports(ProviderConnectionEntity connection) {
+        return ConnectionService.PROVIDER.equals(connection.getProvider());
+    }
+
+    @Override
     public SyncRunEntity requestSync(UUID userId, UUID connectionId) {
         java.util.concurrent.atomic.AtomicReference<SyncRunEntity> result =
                 new java.util.concurrent.atomic.AtomicReference<>();
@@ -110,6 +116,7 @@ public class BankingSyncService {
         return result.get();
     }
 
+    @Override
     public void requestScheduledSync(ProviderConnectionEntity connection) {
         connectionLock.tryWithLock(
                 connection.getId(), () -> runLocked(connection.getUserId(), connection.getId(), "SCHEDULED", false));

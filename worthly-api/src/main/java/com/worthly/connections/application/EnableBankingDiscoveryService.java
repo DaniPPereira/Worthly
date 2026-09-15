@@ -3,6 +3,7 @@ package com.worthly.connections.application;
 import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.shared.web.ApiException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -37,6 +38,7 @@ public class EnableBankingDiscoveryService {
                 discovered.stream().map(EnableBankingModels.DiscoveredBank::name).toList());
         List<EnableBankingModels.DiscoveredBank> v1 =
                 discovered.stream().filter(bank -> isV1Bank(bank, normalized)).toList();
+        v1 = mergeTradeRepublicFromHomeMarket(normalized, v1);
         if (!v1.isEmpty()) {
             return v1;
         }
@@ -48,7 +50,7 @@ public class EnableBankingDiscoveryService {
                     .toList();
         }
         log.info(
-                "No Santander/Revolut ASPSPs for {}; Enable Banking returned {} banks, {} mock/sandbox connectable",
+                "No v1 AIS banks for {}; Enable Banking returned {} banks, {} mock/sandbox connectable",
                 normalized,
                 discovered.size(),
                 mocks.size());
@@ -78,6 +80,9 @@ public class EnableBankingDiscoveryService {
         if ("PT".equalsIgnoreCase(country) && name.contains("santander")) {
             return true;
         }
+        if (InstitutionBrand.fromName(bank.name()) == InstitutionBrand.TRADE_REPUBLIC) {
+            return true;
+        }
         return name.startsWith("revolut") || name.contains(" revolut");
     }
 
@@ -87,6 +92,36 @@ public class EnableBankingDiscoveryService {
         }
         String name = bank.name().toLowerCase(Locale.ROOT);
         return name.contains("mock") || name.contains("sandbox");
+    }
+
+    private List<EnableBankingModels.DiscoveredBank> mergeTradeRepublicFromHomeMarket(
+            String country, List<EnableBankingModels.DiscoveredBank> v1) {
+        if (!"PT".equalsIgnoreCase(country)) {
+            return v1;
+        }
+        boolean already = v1.stream()
+                .anyMatch(bank -> InstitutionBrand.fromName(bank.name()) == InstitutionBrand.TRADE_REPUBLIC);
+        if (already) {
+            return v1;
+        }
+        List<EnableBankingModels.DiscoveredBank> extra = discoverOptional("DE").stream()
+                .filter(bank -> InstitutionBrand.fromName(bank.name()) == InstitutionBrand.TRADE_REPUBLIC)
+                .toList();
+        if (extra.isEmpty()) {
+            return v1;
+        }
+        ArrayList<EnableBankingModels.DiscoveredBank> merged = new ArrayList<>(v1);
+        merged.addAll(extra);
+        return List.copyOf(merged);
+    }
+
+    private List<EnableBankingModels.DiscoveredBank> discoverOptional(String country) {
+        try {
+            return discover(country);
+        } catch (RuntimeException ex) {
+            log.info("Optional ASPSP discovery for {} skipped: {}", country, ex.getMessage());
+            return List.of();
+        }
     }
 
     private List<EnableBankingModels.DiscoveredBank> discover(String country) {

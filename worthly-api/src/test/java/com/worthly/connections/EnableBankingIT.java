@@ -72,10 +72,49 @@ class EnableBankingIT extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode banks = objectMapper.readTree(result.getResponse().getContentAsString());
-        assertThat(banks).hasSize(2);
-        assertThat(banks.get(0).get("name").asText()).isIn("Banco Santander Totta", "Revolut");
-        assertThat(banks.get(1).get("name").asText()).isIn("Banco Santander Totta", "Revolut");
+        assertThat(banks).hasSize(3);
+        assertThat(banks.findValuesAsText("name"))
+                .containsExactlyInAnyOrder("Banco Santander Totta", "Revolut", "Trade Republic");
         assertThat(banks.toString()).doesNotContain("Millennium");
+        JsonNode tradeRepublic = java.util.stream.StreamSupport.stream(banks.spliterator(), false)
+                .filter(node -> "Trade Republic".equals(node.get("name").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(tradeRepublic.get("kind").asText()).isEqualTo("BANK");
+        assertThat(tradeRepublic.get("holdingsIncluded").asBoolean()).isFalse();
+        assertThat(tradeRepublic.get("dataScope").asText()).contains("Holdings");
+    }
+
+    @Test
+    void catalogSeparatesAisCashFromUnavailableHoldings() throws Exception {
+        String token = OwnerAuthClient.accessToken(mockMvc, objectMapper);
+        MvcResult result = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/connections/catalog")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode items = objectMapper.readTree(result.getResponse().getContentAsString()).get("items");
+        assertThat(items.findValuesAsText("name"))
+                .contains(
+                        "Banco Santander Totta",
+                        "Revolut",
+                        "Trade Republic",
+                        "Trading 212",
+                        "Trade Republic investments",
+                        "Revolut Invest");
+        JsonNode aisTradeRepublic = java.util.stream.StreamSupport.stream(items.spliterator(), false)
+                .filter(node -> "Trade Republic".equals(node.get("name").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(aisTradeRepublic.get("kind").asText()).isEqualTo("BANK");
+        assertThat(aisTradeRepublic.get("connectable").asBoolean()).isTrue();
+        assertThat(aisTradeRepublic.get("holdingsIncluded").asBoolean()).isFalse();
+        JsonNode brokerTradeRepublic = java.util.stream.StreamSupport.stream(items.spliterator(), false)
+                .filter(node -> "Trade Republic investments".equals(node.get("name").asText()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(brokerTradeRepublic.get("kind").asText()).isEqualTo("BROKER");
+        assertThat(brokerTradeRepublic.get("connectable").asBoolean()).isFalse();
+        assertThat(brokerTradeRepublic.get("unavailableReason").asText()).isEqualTo("no_official_holdings_api");
     }
 
     @Test
@@ -170,6 +209,25 @@ class EnableBankingIT extends AbstractIntegrationTest {
                 .andExpect(status().isBadRequest());
         mockMvc.perform(MockMvcRequestBuilders.delete("/api/v1/connections/" + connectionId).header("Authorization", "Bearer " + token))
                 .andExpect(status().isNoContent());
+        JsonNode afterDisconnect = objectMapper.readTree(mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/connections")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        assertThat(afterDisconnect.toString()).contains(connectionId);
+        mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/" + connectionId + "/purge")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"confirm\":true}"))
+                .andExpect(status().isNoContent());
+        JsonNode afterPurge = objectMapper.readTree(mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/connections")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString());
+        assertThat(afterPurge.toString()).doesNotContain(connectionId);
     }
 
     @Test
@@ -314,6 +372,14 @@ class EnableBankingIT extends AbstractIntegrationTest {
                           {"name":"Banco Santander Totta","country":"PT","logo":"https://cdn.example.test/santander.png","maximum_consent_validity":7776000},
                           {"name":"Revolut","country":"PT","logo":"https://cdn.example.test/revolut.png","maximum_consent_validity":7776000},
                           {"name":"Millennium BCP","country":"PT","logo":"https://cdn.example.test/bcp.png","maximum_consent_validity":7776000}
+                        ]}
+                        """)));
+        ENABLE_BANKING.stubFor(WireMock.get(urlPathEqualTo("/aspsps"))
+                .withQueryParam("country", equalTo("DE"))
+                .willReturn(okJson(
+                        """
+                        {"aspsps":[
+                          {"name":"Trade Republic","country":"DE","logo":"https://cdn.example.test/tr.png","maximum_consent_validity":7776000}
                         ]}
                         """)));
     }

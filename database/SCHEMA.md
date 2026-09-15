@@ -66,7 +66,7 @@ oauth_refresh_token (
 provider_connection (
   id uuid pk,
   user_id uuid not null references app_user(id),
-  provider text not null, -- ENABLE_BANKING | TRADING_212
+  provider text not null, -- ENABLE_BANKING | TRADING_212 | future brokerage adapters
   status text not null, -- ACTIVE | REAUTH_REQUIRED | CONFIGURATION_REQUIRED | ERROR | DISABLED
   aspsp_name text null,
   aspsp_country char(2) null,
@@ -237,6 +237,7 @@ position_snapshot (
   investment_account_id uuid not null references investment_account(id),
   instrument_key text not null,
   ticker text null,
+  name text null,
   quantity numeric(28,10) not null,
   average_price numeric(19,6) null,
   market_value numeric(19,4) null,
