@@ -265,16 +265,11 @@ a.public-panel__cta.btn-ghost:hover {
   color: var(--ink);
 }
 
-.public-panel__link,
-.public-panel__back {
+.public-panel__link {
   display: block;
   margin-top: 16px;
   font-size: 13px;
   text-align: center;
-}
-
-.public-panel__back {
-  margin-top: 8px;
 }
 
 .public-panel__legal {

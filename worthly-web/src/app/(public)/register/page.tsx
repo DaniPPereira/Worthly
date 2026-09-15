@@ -78,7 +78,7 @@ export default function RegisterPage() {
           Create account
         </button>
       </form>
-      <a href="/login?enter=1" className="muted public-panel__link">
+      <a href="/login/start" className="muted public-panel__link">
         Already have an account? Sign in
       </a>
       <p className="muted public-panel__legal">
