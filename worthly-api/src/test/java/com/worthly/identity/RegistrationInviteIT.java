@@ -24,19 +24,19 @@ class RegistrationInviteIT extends AbstractIntegrationTest {
         String email = "invite-" + UUID.randomUUID() + "@worthly.test";
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
+                        .content("{\"name\":\"Ada\",\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\""
+                        .content("{\"name\":\"Ada\",\"email\":\""
                                 + email
                                 + "\",\"password\":\"correct-horse-battery\",\"invite\":\"wrong\"}"))
                 .andExpect(status().isForbidden());
 
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\""
+                        .content("{\"name\":\"Ada\",\"email\":\""
                                 + email
                                 + "\",\"password\":\"correct-horse-battery\",\"invite\":\"secret-invite\"}"))
                 .andExpect(status().isCreated());

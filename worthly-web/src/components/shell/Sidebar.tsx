@@ -6,7 +6,7 @@ import { RisingW } from "@/components/brand/RisingW";
 import {
   connectionLabel,
   ownerInitial,
-  ownerName,
+  ownerLabel,
   statusTone,
   useAppData,
 } from "@/lib/app-data";
@@ -201,12 +201,11 @@ export function Sidebar() {
             color: "var(--cream)",
           }}
         >
-          {ownerInitial(owner.email)}
+          {ownerInitial(owner)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: "500 12px var(--font-sans)", color: "var(--cream)" }}>{ownerName(owner.email)}</div>
-          <div className="mono" style={{ fontSize: 10, color: "rgba(244,241,234,.66)" }}>
-            {owner.email}
+          <div style={{ font: "500 12px var(--font-sans)", color: "var(--cream)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {ownerLabel(owner)}
           </div>
         </div>
       </div>

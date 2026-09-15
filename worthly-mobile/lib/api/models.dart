@@ -1,19 +1,34 @@
 class Owner {
   const Owner({
     required this.id,
+    this.name,
     required this.email,
     required this.reportingTimezone,
     required this.reportingCurrency,
   });
 
   final String id;
+  final String? name;
   final String email;
   final String reportingTimezone;
   final String reportingCurrency;
 
+  String get label {
+    final display = name?.trim();
+    if (display != null && display.isNotEmpty) {
+      return display;
+    }
+    final local = email.split('@').first;
+    if (local.isEmpty) {
+      return 'Owner';
+    }
+    return '${local[0].toUpperCase()}${local.substring(1)}';
+  }
+
   factory Owner.fromJson(Map<String, dynamic> json) {
     return Owner(
       id: json['id'] as String? ?? '',
+      name: json['name'] as String?,
       email: json['email'] as String,
       reportingTimezone: json['reportingTimezone'] as String,
       reportingCurrency: json['reportingCurrency'] as String,
@@ -208,15 +223,32 @@ class Tx {
 }
 
 class TxPage {
-  const TxPage({required this.items, required this.total});
+  const TxPage({required this.items, required this.total, this.page = 0, this.size = 50});
 
   final List<Tx> items;
   final int total;
+  final int page;
+  final int size;
+
+  bool get hasMore => (page + 1) * size < total;
 
   factory TxPage.fromJson(Map<String, dynamic> json) {
+    final items = (json['items'] as List<dynamic>).map((item) => Tx.fromJson(item as Map<String, dynamic>)).toList();
     return TxPage(
-      items: (json['items'] as List<dynamic>).map((item) => Tx.fromJson(item as Map<String, dynamic>)).toList(),
+      items: items,
       total: (json['total'] as num).toInt(),
+      page: (json['page'] as num?)?.toInt() ?? 0,
+      size: (json['size'] as num?)?.toInt() ?? (items.isEmpty ? 50 : items.length),
+    );
+  }
+
+  TxPage append(TxPage next) {
+    final seen = {for (final item in items) item.id};
+    return TxPage(
+      items: [...items, ...next.items.where((item) => !seen.contains(item.id))],
+      total: next.total,
+      page: next.page,
+      size: next.size,
     );
   }
 }

@@ -26,8 +26,8 @@ public class OwnerService {
     }
 
     @Transactional
-    public Owner updatePreferences(UUID id, String timezone, String currency) {
-        if (timezone == null && currency == null) {
+    public Owner updatePreferences(UUID id, String timezone, String currency, String name) {
+        if (timezone == null && currency == null && name == null) {
             throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
         }
         AppUserEntity entity = users.findById(id).orElseThrow(() -> ApiException.of(HttpStatus.UNAUTHORIZED, "unauthorized"));
@@ -36,6 +36,9 @@ public class OwnerService {
         }
         if (currency != null) {
             entity.setReportingCurrency(requireCurrency(currency));
+        }
+        if (name != null) {
+            entity.setDisplayName(requireName(name));
         }
         return toOwner(entity);
     }
@@ -75,9 +78,21 @@ public class OwnerService {
         }
     }
 
+    public static String requireName(String name) {
+        if (name == null || name.isBlank()) {
+            throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
+        }
+        String normalized = name.trim().replaceAll("\\s+", " ");
+        if (normalized.length() > 80) {
+            throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
+        }
+        return normalized;
+    }
+
     private static Owner toOwner(AppUserEntity entity) {
         return new Owner(
                 entity.getId(),
+                entity.getDisplayName(),
                 entity.getEmail(),
                 entity.getReportingTimezone(),
                 entity.getReportingCurrency(),

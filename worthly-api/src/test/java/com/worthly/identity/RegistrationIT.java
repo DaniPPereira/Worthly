@@ -33,11 +33,12 @@ class RegistrationIT extends AbstractIntegrationTest {
         String email = "second-" + java.util.UUID.randomUUID() + "@worthly.test";
         MvcResult created = mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
+                        .content("{\"name\":\"Ada\",\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode body = objectMapper.readTree(created.getResponse().getContentAsString());
         assertThat(body.get("email").asText()).isEqualTo(email);
+        assertThat(body.get("name").asText()).isEqualTo("Ada");
         assertThat(body.get("reportingTimezone").asText()).isEqualTo("Europe/Lisbon");
         assertThat(body.has("password")).isFalse();
         assertThat(users.findByEmailIgnoreCase(email)).isPresent();
@@ -49,12 +50,12 @@ class RegistrationIT extends AbstractIntegrationTest {
     void duplicateEmailIsConflictAndShortPasswordIsRejected() throws Exception {
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"owner@worthly.test\",\"password\":\"correct-horse-battery\"}"))
+                        .content("{\"name\":\"Ada\",\"email\":\"owner@worthly.test\",\"password\":\"correct-horse-battery\"}"))
                 .andExpect(status().isConflict());
 
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"short@worthly.test\",\"password\":\"short\"}"))
+                        .content("{\"name\":\"Ada\",\"email\":\"short@worthly.test\",\"password\":\"short\"}"))
                 .andExpect(status().isBadRequest());
     }
 }

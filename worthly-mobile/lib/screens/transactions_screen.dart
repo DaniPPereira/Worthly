@@ -25,6 +25,8 @@ class TransactionsScreen extends ConsumerStatefulWidget {
 }
 
 class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
+  static const _pageSize = 50;
+
   String _filter = 'All';
   String _debounced = '';
   late String _from;
@@ -36,6 +38,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   bool _exporting = false;
   String? _categoryId;
   String? _categoryLabel;
+  bool _loadingMore = false;
+  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -44,13 +48,24 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     final range = Period.monthRange(Period.monthKey(owner?.reportingTimezone ?? 'UTC'));
     _from = range.from;
     _to = range.to;
+    _scroll.addListener(_onScroll);
     Future.microtask(_load);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scroll.hasClients) {
+      return;
+    }
+    if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 480) {
+      _load(more: true);
+    }
   }
 
   void _onSearch(String value) {
@@ -61,10 +76,17 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     });
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool more = false}) async {
     if (ref.read(sessionProvider).owner == null) {
       return;
     }
+    if (more) {
+      if (_loadingMore || !(_page?.hasMore ?? false)) {
+        return;
+      }
+      setState(() => _loadingMore = true);
+    }
+    final nextPage = more ? (_page?.page ?? 0) + 1 : 0;
     final uncategorized = ref.read(shellDataProvider).asData?.value.categories.where((item) => item.code == 'uncategorized').firstOrNull?.id;
     final extra = _categoryId != null
         ? '&categoryId=$_categoryId&economicType=EXPENSE'
@@ -78,15 +100,23 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     final q = _debounced.isEmpty ? '' : '&q=${Uri.encodeQueryComponent(_debounced)}';
     try {
       final page = await ref.read(worthlyClientProvider).get(
-        '/transactions?from=$_from&to=$_to&size=${_categoryId == null ? 50 : 200}$extra$q',
+        '/transactions?from=$_from&to=$_to&page=$nextPage&size=$_pageSize$extra$q',
         parseTxPage,
       );
       if (mounted) {
-        setState(() => _page = page);
+        setState(() {
+          _page = more && _page != null ? _page!.append(page) : page;
+          _loadingMore = false;
+        });
       }
     } catch (_) {
       if (mounted) {
-        setState(() => _page = const TxPage(items: [], total: 0));
+        setState(() {
+          if (!more) {
+            _page = const TxPage(items: [], total: 0);
+          }
+          _loadingMore = false;
+        });
       }
     }
   }
@@ -171,6 +201,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     return Stack(
       children: [
         ListView(
+          controller: _scroll,
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
           children: [
             Container(
@@ -262,7 +293,11 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              _page == null ? '' : '${_page!.items.length} of ${_page!.total} transactions',
+              _page == null
+                  ? ''
+                  : _page!.total <= _pageSize
+                      ? '${_page!.total} transactions'
+                      : '${_page!.items.length} of ${_page!.total} transactions',
               style: const TextStyle(fontSize: 11.5, color: WorthlyColors.faint),
             ),
             const SizedBox(height: 8),
@@ -295,6 +330,11 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                           onTap: () => setState(() => _open = tx),
                         ),
                     ],
+                    LoadMoreButton(
+                      hasMore: _page?.hasMore ?? false,
+                      loading: _loadingMore,
+                      onPressed: () => _load(more: true),
+                    ),
                   ],
                 ),
               ),
@@ -320,6 +360,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                   _page = TxPage(
                     items: _page!.items.map((item) => item.id == next.id ? next : item).toList(),
                     total: _page!.total,
+                    page: _page!.page,
+                    size: _page!.size,
                   );
                 }
               });

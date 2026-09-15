@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Worthly API
-  version: 4.4.0
+  version: 4.5.0
   description: |
     Canonical MVP API contract for Worthly.
 
@@ -35,7 +35,7 @@ paths:
       description: |
         Creates an isolated user. Does not issue tokens. The caller then
         signs in through OAuth. Duplicate email is 409 `email_taken`.
-        Password minimum length is 8 characters.
+        Password minimum length is 8 characters. Name is required.
       requestBody:
         required: true
         content:
@@ -72,7 +72,7 @@ paths:
             schema: {$ref: '#/components/schemas/OwnerPatch'}
       responses:
         '200':
-          description: Updated owner preferences
+          description: Updated owner
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Owner'}
@@ -741,6 +741,7 @@ components:
       required: [id, email, reportingTimezone, reportingCurrency]
       properties:
         id: {type: string, format: uuid}
+        name: {type: string, maxLength: 80, description: Display name chosen at registration. Null for accounts created before names existed.}
         email: {type: string, format: email}
         reportingTimezone: {type: string, example: Europe/Lisbon}
         reportingCurrency: {type: string, example: EUR}
@@ -749,6 +750,10 @@ components:
       minProperties: 1
       additionalProperties: false
       properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
         reportingTimezone:
           type: string
           minLength: 1
@@ -760,9 +765,10 @@ components:
           description: ISO 4217 reporting currency preference. Does not imply FX conversion.
     RegisterRequest:
       type: object
-      required: [email, password]
+      required: [name, email, password]
       additionalProperties: false
       properties:
+        name: {type: string, minLength: 1, maxLength: 80}
         email: {type: string, format: email}
         password: {type: string, minLength: 8, maxLength: 128}
         reportingTimezone:

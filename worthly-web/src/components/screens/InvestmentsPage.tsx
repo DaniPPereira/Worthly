@@ -1,22 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CurrencyTabs, EmptyState } from "@/components/ui/Primitives";
+import { CurrencyTabs, EmptyState, LoadMore, Pager } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
 import { includesHoldings, isBank, useAppData } from "@/lib/app-data";
 import { compareAmountDesc, formatAmount, formatSignedAmount, groupByCurrency, weightPercent } from "@/lib/money";
 import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
-import type { InvestmentSummary, Position, TransactionPage } from "@/lib/types";
+import type { InvestmentSummary, Position, Transaction, TransactionPage } from "@/lib/types";
 
 const SLICE_COLORS = ["#0E4A3E", "#2C6B5C", "#4A8878", "#C98F32", "#8A6412", "#5E6A67", "#B8BFBC", "#D9D3C7"];
 const TOP_SLICES = 7;
+const POSITION_PAGE_SIZE = 25;
+const HISTORY_PAGE_SIZE = 20;
+const HISTORY_TYPES = ["INVESTMENT_FUNDING", "INVESTMENT_WITHDRAWAL", "INCOME"] as const;
 
 export function InvestmentsPage() {
   const { owner, privacy, categories, connections } = useAppData();
   const [summary, setSummary] = useState<InvestmentSummary | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
-  const [history, setHistory] = useState<TransactionPage | null>(null);
+  const [historyItems, setHistoryItems] = useState<Transaction[]>([]);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [currency, setCurrency] = useState(owner.reportingCurrency);
+  const [positionPage, setPositionPage] = useState(0);
 
   const month = monthKeyInZone(owner.reportingTimezone);
   const { from } = monthDateRange(shiftMonthKey(month, -5));
@@ -27,22 +34,12 @@ export function InvestmentsPage() {
     Promise.all([
       apiGet<InvestmentSummary>("/investments/summary"),
       apiGet<Position[]>("/investments/positions"),
-      Promise.all([
-        apiGet<TransactionPage>(`/transactions?economicType=INVESTMENT_FUNDING&from=${from}&to=${to}&size=50`),
-        apiGet<TransactionPage>(`/transactions?economicType=INVESTMENT_WITHDRAWAL&from=${from}&to=${to}&size=50`),
-        apiGet<TransactionPage>(`/transactions?economicType=INCOME&from=${from}&to=${to}&size=50`),
-      ]).then((pages) => {
-        const items = pages.flatMap((page) => page.items);
-        items.sort((left, right) => right.reportingAt.localeCompare(left.reportingAt));
-        return { items, page: 0, size: items.length, total: items.length } as TransactionPage;
-      }),
-    ]).then(([nextSummary, nextPositions, nextHistory]) => {
+    ]).then(([nextSummary, nextPositions]) => {
       if (cancelled) {
         return;
       }
       setSummary(nextSummary);
       setPositions(nextPositions);
-      setHistory(nextHistory);
       const first = nextSummary.totalsByCurrency[0]?.currency ?? owner.reportingCurrency;
       setCurrency((current) => nextSummary.totalsByCurrency.some((row) => row.currency === current) ? current : first);
     }).catch(() => {
@@ -54,7 +51,29 @@ export function InvestmentsPage() {
     return () => {
       cancelled = true;
     };
-  }, [from, owner.reportingCurrency, to]);
+  }, [owner.reportingCurrency]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadInvestmentHistory(from, to, 0)
+      .then((next) => {
+        if (cancelled) {
+          return;
+        }
+        setHistoryItems(next.items);
+        setHistoryHasMore(next.hasMore);
+        setHistoryPage(0);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHistoryItems([]);
+          setHistoryHasMore(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [from, to]);
 
   const row = summary?.totalsByCurrency.find((item) => item.currency === currency);
   const currencies = summary?.totalsByCurrency.map((item) => item.currency) ?? [];
@@ -65,6 +84,9 @@ export function InvestmentsPage() {
   const visible = [...(grouped.get(currency) ?? [])].sort((left, right) =>
     compareAmountDesc(left.marketValue!.amount, right.marketValue!.amount),
   );
+  const positionPageCount = Math.max(1, Math.ceil(visible.length / POSITION_PAGE_SIZE));
+  const safePositionPage = Math.min(positionPage, positionPageCount - 1);
+  const pagedPositions = visible.slice(safePositionPage * POSITION_PAGE_SIZE, (safePositionPage + 1) * POSITION_PAGE_SIZE);
   const portfolioTotal = visible.reduce(
     (sum, position) => sum + BigInt(toCents(position.marketValue!.amount)),
     0n,
@@ -75,7 +97,7 @@ export function InvestmentsPage() {
     const dividendIds = new Set(
       categories.filter((item) => item.code?.includes("investment") || item.code === "income.investment.dividend").map((item) => item.id),
     );
-    return (history?.items ?? []).filter((tx) => {
+    return historyItems.filter((tx) => {
       if (tx.money.currency !== currency) {
         return false;
       }
@@ -87,7 +109,30 @@ export function InvestmentsPage() {
       }
       return tx.categoryId != null && dividendIds.has(tx.categoryId);
     });
-  }, [categories, currency, history]);
+  }, [categories, currency, historyItems]);
+
+  function onCurrency(next: string) {
+    setCurrency(next);
+    setPositionPage(0);
+  }
+
+  async function loadMoreHistory() {
+    if (historyLoading || !historyHasMore) {
+      return;
+    }
+    setHistoryLoading(true);
+    try {
+      const nextPage = historyPage + 1;
+      const next = await loadInvestmentHistory(from, to, nextPage);
+      setHistoryItems((current) => mergeById(current, next.items));
+      setHistoryHasMore(next.hasMore);
+      setHistoryPage(nextPage);
+    } catch {
+      /* keep the rows already on screen */
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   if (!summary) {
     return <p className="muted">Loading investments…</p>;
@@ -118,7 +163,7 @@ export function InvestmentsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <CurrencyTabs currencies={currencies} selected={currency} onSelect={setCurrency} />
+      <CurrencyTabs currencies={currencies} selected={currency} onSelect={onCurrency} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 16 }}>
         <div style={{ background: "#131A19", borderRadius: 16, padding: 24, color: "var(--cream)" }}>
           <div className="label" style={{ color: "rgba(244,241,234,.68)" }}>Portfolio value</div>
@@ -194,7 +239,8 @@ export function InvestmentsPage() {
           {visible.length === 0 ? (
             <p className="muted" style={{ padding: 20 }}>No positions in {currency}.</p>
           ) : (
-            visible.map((position) => (
+            <>
+              {pagedPositions.map((position) => (
               <div
                 key={position.instrumentKey}
                 style={{
@@ -222,12 +268,14 @@ export function InvestmentsPage() {
                   {privacy ? "•••" : (position.quantity ?? "—")}
                 </span>
               </div>
-            ))
+              ))}
+              <Pager page={safePositionPage} size={POSITION_PAGE_SIZE} total={visible.length} onPage={setPositionPage} />
+            </>
           )}
         </div>
         <div className="card" style={{ padding: "20px 20px 8px" }}>
           <div className="label">Cash movements</div>
-          {events.length === 0 ? (
+          {events.length === 0 && !historyHasMore ? (
             <p className="muted" style={{ marginTop: 12 }}>No deposits, withdrawals or dividends in the last six months.</p>
           ) : (
             events.map((tx) => (
@@ -246,6 +294,7 @@ export function InvestmentsPage() {
               </div>
             ))
           )}
+          <LoadMore hasMore={historyHasMore} loading={historyLoading} onClick={() => void loadMoreHistory()} />
         </div>
       </div>
     </div>
@@ -253,6 +302,23 @@ export function InvestmentsPage() {
 }
 
 type Slice = { label: string; weight: string; share: number; color: string };
+
+async function loadInvestmentHistory(from: string, to: string, page: number): Promise<{ items: Transaction[]; hasMore: boolean }> {
+  const pages = await Promise.all(
+    HISTORY_TYPES.map((type) =>
+      apiGet<TransactionPage>(`/transactions?economicType=${type}&from=${from}&to=${to}&page=${page}&size=${HISTORY_PAGE_SIZE}`),
+    ),
+  );
+  const items = pages.flatMap((row) => row.items);
+  items.sort((left, right) => right.reportingAt.localeCompare(left.reportingAt));
+  const hasMore = pages.some((row) => (page + 1) * HISTORY_PAGE_SIZE < row.total);
+  return { items, hasMore };
+}
+
+function mergeById(current: Transaction[], incoming: Transaction[]): Transaction[] {
+  const seen = new Set(current.map((item) => item.id));
+  return [...current, ...incoming.filter((item) => !seen.has(item.id))];
+}
 
 function allocationSlices(positions: Position[], totalCents: bigint): Slice[] {
   if (totalCents === 0n) {

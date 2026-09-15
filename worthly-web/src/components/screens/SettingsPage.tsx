@@ -17,6 +17,7 @@ export function SettingsPage() {
   const { owner, privacy, setPrivacy, categories, notifications, refresh } = useAppData();
   const [timezone, setTimezone] = useState(owner.reportingTimezone);
   const [currency, setCurrency] = useState(owner.reportingCurrency);
+  const [name, setName] = useState(owner.name ?? "");
   const [devices, setDevices] = useState<Device[]>([]);
   const [rules, setRules] = useState<CategorizationRule[]>([]);
   const [uncategorized, setUncategorized] = useState(0);
@@ -53,7 +54,11 @@ export function SettingsPage() {
   async function savePrefs() {
     setSaving(true);
     try {
-      await apiSend("PATCH", "/me", { reportingTimezone: timezone, reportingCurrency: currency });
+      await apiSend("PATCH", "/me", {
+        name: name.trim() || undefined,
+        reportingTimezone: timezone,
+        reportingCurrency: currency,
+      });
       await refresh();
     } finally {
       setSaving(false);
@@ -196,6 +201,9 @@ export function SettingsPage() {
     <div className="settings-grid">
       <div className="settings-col">
       <Group title="Reporting">
+        <Row label="Name" sub="Shown in the sidebar">
+          <input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} autoComplete="name" style={{ ...inputStyle, width: 180 }} />
+        </Row>
         <Row label="Timezone" sub="Used for the reporting month and timestamps">
           <select className="mono" value={timezone} onChange={(event) => setTimezone(event.target.value)} style={selectStyle}>
             {TIMEZONES.includes(timezone) ? null : <option value={timezone}>{timezone}</option>}

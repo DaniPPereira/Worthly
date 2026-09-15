@@ -39,12 +39,12 @@ class WorthlyClient {
     return parse(jsonDecode(response.body));
   }
 
-  Future<void> register({required String email, required String password}) async {
+  Future<void> register({required String name, required String email, required String password}) async {
     final uri = Uri.parse('${_config.apiUrl}/api/v1/register');
     final response = await _http.post(
       uri,
       headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-      body: jsonEncode({'email': email, 'password': password}),
+      body: jsonEncode({'name': name, 'email': email, 'password': password}),
     );
     if (response.statusCode == 409) {
       throw StateError('email_taken');

@@ -14,6 +14,7 @@ class RegisterScreen extends ConsumerStatefulWidget {
 }
 
 class _RegisterScreenState extends ConsumerState<RegisterScreen> {
+  final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   String? _error;
@@ -22,6 +23,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
   @override
   void dispose() {
+    _name.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -33,7 +35,11 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       _busy = true;
     });
     try {
-      await ref.read(worthlyClientProvider).register(email: _email.text.trim(), password: _password.text);
+      await ref.read(worthlyClientProvider).register(
+        name: _name.text.trim(),
+        email: _email.text.trim(),
+        password: _password.text,
+      );
       if (!mounted) {
         return;
       }
@@ -45,7 +51,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       setState(() {
         _error = error.toString().contains('email_taken')
             ? 'That email is already registered.'
-            : 'Use a valid email and a password of at least 8 characters.';
+            : 'Use a name, a valid email and a password of at least 8 characters.';
       });
     } finally {
       if (mounted) {
@@ -81,6 +87,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                 style: TextStyle(fontSize: 14, height: 1.55, color: WorthlyColors.muted),
               ),
               const SizedBox(height: 28),
+              Text('NAME', style: labelStyle()),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _name,
+                textCapitalization: TextCapitalization.words,
+                autofillHints: const [AutofillHints.name],
+                decoration: _fieldDecoration(),
+              ),
+              const SizedBox(height: 16),
               Text('EMAIL', style: labelStyle()),
               const SizedBox(height: 6),
               TextField(

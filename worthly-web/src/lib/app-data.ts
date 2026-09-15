@@ -25,14 +25,17 @@ export function useAppData(): AppData {
   return value;
 }
 
-export function ownerInitial(email: string): string {
-  const local = email.split("@")[0] ?? "W";
-  return local.slice(0, 1).toUpperCase();
+export function ownerLabel(owner: Owner): string {
+  const name = owner.name?.trim();
+  if (name) {
+    return name;
+  }
+  const local = owner.email.split("@")[0] ?? "Owner";
+  return local.charAt(0).toUpperCase() + local.slice(1);
 }
 
-export function ownerName(email: string): string {
-  const local = email.split("@")[0] ?? "Owner";
-  return local.charAt(0).toUpperCase() + local.slice(1);
+export function ownerInitial(owner: Owner): string {
+  return ownerLabel(owner).slice(0, 1).toUpperCase();
 }
 
 export function isBank(connection: Connection): boolean {

@@ -35,7 +35,7 @@ class AccountDeletionIT extends AbstractIntegrationTest {
         String password = "correct-horse-battery";
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
+                        .content("{\"name\":\"Ada\",\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"))
                 .andExpect(status().isCreated());
 
         String access = OwnerAuthClient.accessToken(mockMvc, objectMapper, email, password);

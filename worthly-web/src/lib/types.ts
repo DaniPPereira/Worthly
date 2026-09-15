@@ -1,5 +1,6 @@
 export type Owner = {
   id: string;
+  name: string | null;
   email: string;
   reportingTimezone: string;
   reportingCurrency: string;

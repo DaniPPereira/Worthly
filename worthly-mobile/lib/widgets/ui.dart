@@ -272,3 +272,26 @@ class PineButton extends StatelessWidget {
     );
   }
 }
+
+class LoadMoreButton extends StatelessWidget {
+  const LoadMoreButton({super.key, required this.hasMore, required this.loading, required this.onPressed});
+
+  final bool hasMore;
+  final bool loading;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!hasMore && !loading) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Center(
+        child: loading
+            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: WorthlyColors.pine))
+            : TextButton(onPressed: onPressed, child: const Text('Load more')),
+      ),
+    );
+  }
+}

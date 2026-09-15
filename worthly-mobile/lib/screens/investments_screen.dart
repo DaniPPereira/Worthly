@@ -18,9 +18,17 @@ class InvestmentsScreen extends ConsumerStatefulWidget {
 }
 
 class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
+  static const _holdingsPageSize = 25;
+  static const _historyPageSize = 20;
+  static const _historyTypes = ['INVESTMENT_FUNDING', 'INVESTMENT_WITHDRAWAL', 'INCOME'];
+
   InvestmentSummary? _summary;
   List<Position> _positions = [];
-  TxPage? _history;
+  List<Tx> _history = [];
+  int _historyPage = 0;
+  bool _historyHasMore = false;
+  bool _historyLoadingMore = false;
+  int _holdingsShown = _holdingsPageSize;
   String? _currency;
   bool _failed = false;
 
@@ -35,13 +43,11 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
     if (owner == null) {
       return;
     }
-    final month = Period.monthKey(owner.reportingTimezone);
-    final range = Period.monthRange(month);
     try {
       final client = ref.read(worthlyClientProvider);
       final summary = await client.get('/investments/summary', parseInvestments);
       final positions = await client.get('/investments/positions', parsePositions);
-      final history = await client.get('/transactions?from=${range.from}&to=${range.to}&size=20', parseTxPage);
+      final history = await _fetchHistory(0);
       if (!mounted) {
         return;
       }
@@ -49,8 +55,11 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
       setState(() {
         _summary = summary;
         _positions = positions;
-        _history = history;
+        _history = history.items;
+        _historyPage = 0;
+        _historyHasMore = history.hasMore;
         _currency = summary.totalsByCurrency.any((row) => row.currency == _currency) ? _currency : first;
+        _holdingsShown = _holdingsPageSize;
         _failed = false;
       });
     } catch (_) {
@@ -58,8 +67,55 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
         setState(() {
           _summary = const InvestmentSummary(totalsByCurrency: []);
           _positions = [];
+          _history = [];
+          _historyHasMore = false;
           _failed = true;
         });
+      }
+    }
+  }
+
+  Future<({List<Tx> items, bool hasMore})> _fetchHistory(int page) async {
+    final owner = ref.read(sessionProvider).owner!;
+    final month = Period.monthKey(owner.reportingTimezone);
+    final from = Period.monthRange(Period.shiftMonthKey(month, -5)).from;
+    final to = Period.monthRange(month).to;
+    final client = ref.read(worthlyClientProvider);
+    final pages = await Future.wait(
+      _historyTypes.map(
+        (type) => client.get(
+          '/transactions?economicType=$type&from=$from&to=$to&page=$page&size=$_historyPageSize',
+          parseTxPage,
+        ),
+      ),
+    );
+    final items = pages.expand((row) => row.items).toList()
+      ..sort((left, right) => right.reportingAt.compareTo(left.reportingAt));
+    final hasMore = pages.any((row) => (page + 1) * _historyPageSize < row.total);
+    return (items: items, hasMore: hasMore);
+  }
+
+  Future<void> _loadMoreHistory() async {
+    if (_historyLoadingMore || !_historyHasMore) {
+      return;
+    }
+    setState(() => _historyLoadingMore = true);
+    try {
+      final nextPage = _historyPage + 1;
+      final next = await _fetchHistory(nextPage);
+      if (!mounted) {
+        return;
+      }
+      final seen = {for (final tx in _history) tx.id};
+      setState(() {
+        _history = [..._history, ...next.items.where((tx) => !seen.contains(tx.id))];
+        _historyPage = nextPage;
+        _historyHasMore = next.hasMore;
+        _historyLoadingMore = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _historyLoadingMore = false);
       }
     }
   }
@@ -91,7 +147,7 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
       portfolio += MoneyFmt.cents(position.marketValue!.amount);
     }
     final dividendIds = categories.where((item) => (item.code ?? '').contains('investment') || item.code == 'income.investment.dividend').map((item) => item.id).toSet();
-    final events = (_history?.items ?? []).where((tx) {
+    final events = _history.where((tx) {
       if (tx.money.currency != currency) {
         return false;
       }
@@ -99,13 +155,17 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
           tx.economicType == 'INVESTMENT_WITHDRAWAL' ||
           (tx.categoryId != null && dividendIds.contains(tx.categoryId));
     }).toList();
+    final shownHoldings = visible.take(_holdingsShown).toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
       children: [
         CurrencyPills(
           currencies: _summary!.totalsByCurrency.map((item) => item.currency).toList(),
           selected: currency,
-          onSelect: (value) => setState(() => _currency = value),
+          onSelect: (value) => setState(() {
+            _currency = value;
+            _holdingsShown = _holdingsPageSize;
+          }),
         ),
         Row(
           children: [
@@ -181,7 +241,7 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
                   child: Text('No positions in this currency.', style: TextStyle(color: WorthlyColors.faint)),
                 )
               else
-                for (final position in visible)
+                for (final position in shownHoldings)
                   Padding(
                     padding: const EdgeInsets.only(top: 13),
                     child: Row(
@@ -202,6 +262,11 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
                       ],
                     ),
                   ),
+              LoadMoreButton(
+                hasMore: shownHoldings.length < visible.length,
+                loading: false,
+                onPressed: () => setState(() => _holdingsShown += _holdingsPageSize),
+              ),
             ],
           ),
         ),
@@ -211,10 +276,10 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('HISTORY', style: labelStyle()),
-              if (events.isEmpty)
+              if (events.isEmpty && !_historyHasMore)
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
-                  child: Text('No funding, withdrawal or dividend movements this month.', style: TextStyle(color: WorthlyColors.muted, fontSize: 13)),
+                  child: Text('No funding, withdrawal or dividend movements in the last six months.', style: TextStyle(color: WorthlyColors.muted, fontSize: 13)),
                 )
               else
                 for (final tx in events)
@@ -238,6 +303,11 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
                       ],
                     ),
                   ),
+              LoadMoreButton(
+                hasMore: _historyHasMore,
+                loading: _historyLoadingMore,
+                onPressed: _loadMoreHistory,
+              ),
             ],
           ),
         ),

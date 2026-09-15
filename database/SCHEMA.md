@@ -14,6 +14,7 @@ migration that omits a uniqueness rule below is a spec defect.
 app_user (
   id uuid pk,
   email citext not null unique,
+  display_name varchar(80) null,
   password_hash text not null,
   status text not null, -- ACTIVE | LOCKED | DISABLED
   reporting_timezone varchar(64) not null default 'Europe/Lisbon',

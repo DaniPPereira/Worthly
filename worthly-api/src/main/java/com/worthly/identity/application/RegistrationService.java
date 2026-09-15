@@ -39,8 +39,14 @@ public class RegistrationService {
 
     @Transactional
     public Owner register(
-            String email, String password, String reportingTimezone, String reportingCurrency, String invite) {
+            String name,
+            String email,
+            String password,
+            String reportingTimezone,
+            String reportingCurrency,
+            String invite) {
         assertInvite(invite);
+        String displayName = OwnerService.requireName(name);
         String normalizedEmail = normalizeEmail(email);
         if (password == null || password.length() < OwnerBootstrapRunner.MIN_PASSWORD_LENGTH) {
             throw ApiException.of(HttpStatus.BAD_REQUEST, "password_too_short");
@@ -52,6 +58,7 @@ public class RegistrationService {
             throw ApiException.of(HttpStatus.CONFLICT, "email_taken");
         }
         AppUserEntity user = new AppUserEntity();
+        user.setDisplayName(displayName);
         user.setEmail(normalizedEmail);
         user.setPasswordHash(passwordEncoder.encode(password));
         user.setStatus(OwnerStatus.ACTIVE);
@@ -65,6 +72,7 @@ public class RegistrationService {
         auditService.record(user.getId(), "USER_REGISTERED", Map.of("emailDomain", domainOf(normalizedEmail)));
         return new Owner(
                 user.getId(),
+                user.getDisplayName(),
                 user.getEmail(),
                 user.getReportingTimezone(),
                 user.getReportingCurrency(),

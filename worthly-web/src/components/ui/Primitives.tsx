@@ -119,3 +119,58 @@ export function ErrorBanner({ message }: { message: string }) {
     </div>
   );
 }
+
+export function Pager({
+  page,
+  size,
+  total,
+  onPage,
+  disabled,
+}: {
+  page: number;
+  size: number;
+  total: number;
+  onPage: (page: number) => void;
+  disabled?: boolean;
+}) {
+  if (total <= size) {
+    return null;
+  }
+  const from = page * size + 1;
+  const to = Math.min(total, (page + 1) * size);
+  const last = Math.max(0, Math.ceil(total / size) - 1);
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "12px 20px" }}>
+      <span className="muted" style={{ fontSize: 12 }}>
+        {from}–{to} of {total}
+      </span>
+      <button type="button" className="btn btn-ghost" style={{ height: 32 }} disabled={disabled || page <= 0} onClick={() => onPage(page - 1)}>
+        Previous
+      </button>
+      <button type="button" className="btn btn-ghost" style={{ height: 32 }} disabled={disabled || page >= last} onClick={() => onPage(page + 1)}>
+        Next
+      </button>
+    </div>
+  );
+}
+
+export function LoadMore({
+  hasMore,
+  loading,
+  onClick,
+}: {
+  hasMore: boolean;
+  loading?: boolean;
+  onClick: () => void;
+}) {
+  if (!hasMore) {
+    return null;
+  }
+  return (
+    <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 4px" }}>
+      <button type="button" className="btn btn-ghost" style={{ height: 36 }} disabled={loading} onClick={onClick}>
+        {loading ? "Loading…" : "Load more"}
+      </button>
+    </div>
+  );
+}

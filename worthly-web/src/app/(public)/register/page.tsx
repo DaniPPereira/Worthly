@@ -6,6 +6,7 @@ import { PasswordInput } from "@/components/ui/PasswordInput";
 import { csrfToken } from "@/lib/api";
 
 export default function RegisterPage() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -23,14 +24,14 @@ export default function RegisterPage() {
           "Content-Type": "application/json",
           "x-csrf-token": csrfToken(),
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ name: name.trim(), email, password }),
       });
       if (response.status === 409) {
         setError("That email is already registered.");
         return;
       }
       if (response.status === 400) {
-        setError("Use a valid email and a password of at least 8 characters.");
+        setError("Use a name, a valid email and a password of at least 8 characters.");
         return;
       }
       if (!response.ok) {
@@ -53,6 +54,18 @@ export default function RegisterPage() {
       <p className="muted">Then sign in.</p>
       {error ? <p className="public-panel__err">{error}</p> : null}
       <form onSubmit={(event) => void onSubmit(event)} className="public-form">
+        <label className="label">
+          Name
+          <input
+            type="text"
+            autoComplete="name"
+            required
+            maxLength={80}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="public-input"
+          />
+        </label>
         <label className="label">
           Email
           <input

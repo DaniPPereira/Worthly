@@ -39,6 +39,7 @@
     <p class="error" th:if="${error != null and error != 'email_taken' and error != 'password_too_short'}">Could not create the account.</p>
     <form th:action="@{/register}" method="post">
         <input type="hidden" th:if="${_csrf}" th:name="${_csrf.parameterName}" th:value="${_csrf.token}"/>
+        <label>Name <input type="text" name="name" autocomplete="name" maxlength="80" required th:value="${name}"/></label>
         <label>Email <input type="email" name="email" autocomplete="username" required th:value="${email}"/></label>
         <label>Password
             <span class="password-field">

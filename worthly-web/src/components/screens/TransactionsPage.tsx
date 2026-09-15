@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TransactionDrawer } from "@/components/screens/TransactionDrawer";
-import { EmptyState } from "@/components/ui/Primitives";
+import { EmptyState, Pager } from "@/components/ui/Primitives";
 import { apiGet, downloadCsv } from "@/lib/api";
 import { isBank, useAppData } from "@/lib/app-data";
 import { formatAmount, formatSignedAmount } from "@/lib/money";
@@ -13,6 +13,7 @@ import type { Account, Transaction, TransactionPage } from "@/lib/types";
 
 const FILTERS = ["All", "Expenses", "Income", "Transfers", "Uncategorized"] as const;
 type Filter = (typeof FILTERS)[number];
+const PAGE_SIZE = 50;
 
 function queryFor(filter: Filter, uncategorizedId: string | undefined, categoryId: string | null): string {
   if (categoryId) {
@@ -40,7 +41,9 @@ export function TransactionsPage() {
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const [debounced, setDebounced] = useState(searchParams.get("q") ?? "");
   const [heldTx, setHeldTx] = useState<Transaction | null>(null);
+  const [pageIndex, setPageIndex] = useState(0);
   const [page, setPage] = useState<TransactionPage | null>(null);
+  const [listingLoading, setListingLoading] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open"));
   const [exportError, setExportError] = useState<string | null>(null);
@@ -65,11 +68,35 @@ export function TransactionsPage() {
   }, []);
 
   useEffect(() => {
+    setPageIndex(0);
+  }, [categoryId, debounced, filter, from, to]);
+
+  useEffect(() => {
     const q = debounced ? `&q=${encodeURIComponent(debounced)}` : "";
-    void apiGet<TransactionPage>(`/transactions?from=${from}&to=${to}&size=${categoryId ? 200 : 50}${queryFor(filter, uncategorizedId, categoryId)}${q}`)
-      .then(setPage)
-      .catch(() => setPage({ items: [], page: 0, size: 50, total: 0 }));
-  }, [categoryId, debounced, filter, from, to, uncategorizedId, reloadKey]);
+    let cancelled = false;
+    setListingLoading(true);
+    void apiGet<TransactionPage>(
+      `/transactions?from=${from}&to=${to}&page=${pageIndex}&size=${PAGE_SIZE}${queryFor(filter, uncategorizedId, categoryId)}${q}`,
+    )
+      .then((next) => {
+        if (!cancelled) {
+          setPage(next);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPage({ items: [], page: pageIndex, size: PAGE_SIZE, total: 0 });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setListingLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId, debounced, filter, from, to, pageIndex, reloadKey, uncategorizedId]);
 
   useEffect(() => {
     const nextFrom = searchParams.get("from");
@@ -246,7 +273,11 @@ export function TransactionsPage() {
         ) : null}
         <div style={{ flex: 1 }} />
         <div style={{ alignSelf: "center", fontSize: 11.5, color: "var(--faint)" }}>
-          {page ? `${page.items.length} of ${page.total} transactions` : ""}
+          {page
+            ? page.total <= PAGE_SIZE
+              ? `${page.total} transactions`
+              : `${page.page * page.size + 1}–${Math.min(page.total, (page.page + 1) * page.size)} of ${page.total}`
+            : ""}
         </div>
       </div>
       {!page ? (
@@ -363,6 +394,16 @@ export function TransactionsPage() {
               </button>
             );
           })}
+          <Pager
+            page={page.page}
+            size={page.size}
+            total={page.total}
+            disabled={listingLoading}
+            onPage={(next) => {
+              setPageIndex(next);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          />
         </div>
       )}
       <div className="muted">Card purchases can take days to settle — pending rows may change amount or disappear. Nothing here is real-time.</div>

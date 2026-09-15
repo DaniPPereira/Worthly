@@ -26,15 +26,17 @@ public class RegistrationPageController {
     public String submit(
             @RequestParam String email,
             @RequestParam String password,
+            @RequestParam(required = false) String name,
             @RequestParam(required = false) String reportingTimezone,
             @RequestParam(required = false) String reportingCurrency,
             @RequestParam(required = false) String invite,
             Model model) {
         try {
-            registrationService.register(email, password, reportingTimezone, reportingCurrency, invite);
+            registrationService.register(name, email, password, reportingTimezone, reportingCurrency, invite);
             return "redirect:/login?registered";
         } catch (ApiException ex) {
             model.addAttribute("error", ex.getCode());
+            model.addAttribute("name", name);
             model.addAttribute("email", email);
             model.addAttribute("invite", invite);
             return "register";

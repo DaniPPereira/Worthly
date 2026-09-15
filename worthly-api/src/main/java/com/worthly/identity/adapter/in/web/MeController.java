@@ -46,7 +46,10 @@ public class MeController {
     @PatchMapping("/me")
     public OwnerResponse update(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody OwnerPatchRequest request) {
         Owner owner = ownerService.updatePreferences(
-                UUID.fromString(jwt.getSubject()), request.reportingTimezone(), request.reportingCurrency());
+                UUID.fromString(jwt.getSubject()),
+                request.reportingTimezone(),
+                request.reportingCurrency(),
+                request.name());
         return OwnerResponse.from(owner);
     }
 
@@ -68,10 +71,10 @@ public class MeController {
                 UUID.fromString(jwt.getSubject()), body != null && Boolean.TRUE.equals(body.confirm()));
     }
 
-    public record OwnerResponse(UUID id, String email, String reportingTimezone, String reportingCurrency) {
+    public record OwnerResponse(UUID id, String name, String email, String reportingTimezone, String reportingCurrency) {
         public static OwnerResponse from(Owner owner) {
             return new OwnerResponse(
-                    owner.id(), owner.email(), owner.reportingTimezone(), owner.reportingCurrency());
+                    owner.id(), owner.name(), owner.email(), owner.reportingTimezone(), owner.reportingCurrency());
         }
     }
 
@@ -80,6 +83,7 @@ public class MeController {
     public record DeleteAccountRequest(Boolean confirm) {}
 
     public record OwnerPatchRequest(
+            @Size(min = 1, max = 80) String name,
             @Size(min = 1, max = 64) String reportingTimezone,
             @Pattern(regexp = "^[A-Z]{3}$") String reportingCurrency) {}
 }

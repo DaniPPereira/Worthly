@@ -26,6 +26,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late String _timezone;
   late String _currency;
+  late final TextEditingController _name;
   List<Device> _devices = [];
   List<CategorizationRule> _rules = [];
   int _uncategorized = 0;
@@ -43,7 +44,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final owner = ref.read(sessionProvider).owner;
     _timezone = owner?.reportingTimezone ?? 'UTC';
     _currency = owner?.reportingCurrency ?? 'EUR';
+    _name = TextEditingController(text: owner?.name ?? '');
     Future.microtask(_load);
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -96,7 +104,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final owner = await ref.read(worthlyClientProvider).send(
         'PATCH',
         '/me',
-        body: {'reportingTimezone': _timezone, 'reportingCurrency': _currency},
+        body: {
+          if (_name.text.trim().isNotEmpty) 'name': _name.text.trim(),
+          'reportingTimezone': _timezone,
+          'reportingCurrency': _currency,
+        },
         parse: parseOwner,
       );
       if (owner != null) {
@@ -320,6 +332,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
       children: [
         _group('Reporting', [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Name', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13.5)),
+                const Text('Shown on your account', style: TextStyle(fontSize: 11.5, color: WorthlyColors.faint)),
+                TextField(
+                  controller: _name,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(isDense: true, border: InputBorder.none),
+                ),
+              ],
+            ),
+          ),
           _selectRow(
             'Timezone',
             'Used for the reporting month and timestamps',
