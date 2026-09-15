@@ -13,6 +13,7 @@ export type Connection = {
   institutionCountry: string | null;
   lastSuccessfulSyncAt: string | null;
   consentExpiresAt: string | null;
+  lastErrorCode: string | null;
 };
 
 export type BankChoice = {

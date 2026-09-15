@@ -29,13 +29,19 @@ public final class OwnerAuthClient {
     private OwnerAuthClient() {}
 
     public static String accessToken(MockMvc mockMvc, ObjectMapper objectMapper) throws Exception {
+        return accessToken(
+                mockMvc, objectMapper, AbstractIntegrationTest.OWNER_EMAIL, AbstractIntegrationTest.OWNER_PASSWORD);
+    }
+
+    public static String accessToken(MockMvc mockMvc, ObjectMapper objectMapper, String email, String password)
+            throws Exception {
         MvcResult loginPage = mockMvc.perform(get("/login")).andReturn();
         MockHttpSession session = (MockHttpSession) loginPage.getRequest().getSession(true);
 
         mockMvc.perform(post("/login")
                         .session(session)
-                        .param("username", AbstractIntegrationTest.OWNER_EMAIL)
-                        .param("password", AbstractIntegrationTest.OWNER_PASSWORD)
+                        .param("username", email)
+                        .param("password", password)
                         .with(csrf()))
                 .andExpect(status().is3xxRedirection());
 

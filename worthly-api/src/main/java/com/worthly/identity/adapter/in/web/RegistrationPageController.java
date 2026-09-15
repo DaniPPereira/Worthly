@@ -28,13 +28,15 @@ public class RegistrationPageController {
             @RequestParam String password,
             @RequestParam(required = false) String reportingTimezone,
             @RequestParam(required = false) String reportingCurrency,
+            @RequestParam(required = false) String invite,
             Model model) {
         try {
-            registrationService.register(email, password, reportingTimezone, reportingCurrency);
+            registrationService.register(email, password, reportingTimezone, reportingCurrency, invite);
             return "redirect:/login?registered";
         } catch (ApiException ex) {
             model.addAttribute("error", ex.getCode());
             model.addAttribute("email", email);
+            model.addAttribute("invite", invite);
             return "register";
         }
     }

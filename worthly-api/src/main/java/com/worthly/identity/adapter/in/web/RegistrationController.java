@@ -29,7 +29,11 @@ public class RegistrationController {
     @ResponseStatus(HttpStatus.CREATED)
     public MeController.OwnerResponse register(@Valid @RequestBody RegisterRequest request) {
         Owner owner = registrationService.register(
-                request.email(), request.password(), request.reportingTimezone(), request.reportingCurrency());
+                request.email(),
+                request.password(),
+                request.reportingTimezone(),
+                request.reportingCurrency(),
+                request.invite());
         return MeController.OwnerResponse.from(owner);
     }
 
@@ -37,5 +41,6 @@ public class RegistrationController {
             @NotBlank @Email @Size(max = 254) String email,
             @NotBlank @Size(min = OwnerBootstrapRunner.MIN_PASSWORD_LENGTH, max = 128) String password,
             @Size(min = 1, max = 64) String reportingTimezone,
-            @Pattern(regexp = "^[A-Z]{3}$") String reportingCurrency) {}
+            @Pattern(regexp = "^[A-Z]{3}$") String reportingCurrency,
+            @Size(max = 128) String invite) {}
 }

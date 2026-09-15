@@ -1,5 +1,7 @@
 package com.worthly.categories.application;
 
+import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntity;
+import com.worthly.banking.transactions.adapter.out.persistence.TransactionRepository;
 import com.worthly.categories.adapter.out.persistence.CategorizationRuleEntity;
 import com.worthly.categories.adapter.out.persistence.CategorizationRuleRepository;
 import com.worthly.categories.adapter.out.persistence.CategoryEntity;
@@ -23,14 +25,17 @@ public class CategoryAdminService {
     private final CategoryRepository categories;
     private final CategorizationRuleRepository rules;
     private final CategorizationService categorization;
+    private final TransactionRepository transactions;
 
     public CategoryAdminService(
             CategoryRepository categories,
             CategorizationRuleRepository rules,
-            CategorizationService categorization) {
+            CategorizationService categorization,
+            TransactionRepository transactions) {
         this.categories = categories;
         this.rules = rules;
         this.categorization = categorization;
+        this.transactions = transactions;
     }
 
     @Transactional(readOnly = true)
@@ -54,6 +59,55 @@ public class CategoryAdminService {
         return categories.save(entity);
     }
 
+    @Transactional
+    public CategoryEntity updateCategory(UUID userId, UUID categoryId, String label, UUID parentId) {
+        CategoryEntity entity = requireOwnedCustom(userId, categoryId);
+        if (label == null && parentId == null) {
+            throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
+        }
+        if (label != null) {
+            String trimmed = label.trim();
+            if (trimmed.isEmpty() || trimmed.length() > 80) {
+                throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
+            }
+            entity.setLabel(trimmed);
+        }
+        if (parentId != null) {
+            if (parentId.equals(entity.getId())) {
+                throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
+            }
+            categorization.requireVisible(userId, parentId);
+            assertNotAncestor(entity.getId(), parentId);
+            entity.setParentId(parentId);
+            CategoryEntity saved = categories.save(entity);
+            for (TransactionEntity transaction : transactions.findByCategoryId(saved.getId())) {
+                transaction.setEconomicType(categorization.economicTypeFor(saved, transaction.getDirection()));
+                transactions.save(transaction);
+            }
+            return saved;
+        }
+        return categories.save(entity);
+    }
+
+    @Transactional
+    public void deleteCategory(UUID userId, UUID categoryId) {
+        CategoryEntity entity = requireOwnedCustom(userId, categoryId);
+        rules.deleteAll(rules.findByTargetCategoryId(categoryId));
+        UUID fallbackParent = entity.getParentId();
+        for (CategoryEntity child : categories.findByParentId(categoryId)) {
+            child.setParentId(fallbackParent);
+            categories.save(child);
+        }
+        CategoryEntity uncategorized = categories.findByCode("uncategorized").orElse(null);
+        for (TransactionEntity transaction : transactions.findByCategoryId(categoryId)) {
+            transaction.setCategoryId(uncategorized == null ? null : uncategorized.getId());
+            transaction.setCategorizationSource("UNCATEGORIZED");
+            transactions.save(transaction);
+        }
+        categories.delete(entity);
+        categorization.recategorizeNonManual(userId);
+    }
+
     @Transactional(readOnly = true)
     public List<CategorizationRuleEntity> listRules(UUID userId) {
         return rules.findByUserIdOrderByPriorityAsc(userId);
@@ -70,15 +124,25 @@ public class CategoryAdminService {
             BigDecimal amountMax,
             UUID targetCategoryId,
             Boolean enabled) {
+        String normalizedField = field == null ? "" : field.toUpperCase(Locale.ROOT);
+        String normalizedOperator = operator == null ? "" : operator.toUpperCase(Locale.ROOT);
+        String normalizedMatch = matchValue == null ? "" : matchValue.trim();
+        for (CategorizationRuleEntity existing : rules.findByUserIdOrderByPriorityAsc(userId)) {
+            if (existing.getField().equalsIgnoreCase(normalizedField)
+                    && existing.getMatchValue() != null
+                    && existing.getMatchValue().equalsIgnoreCase(normalizedMatch)) {
+                return existing;
+            }
+        }
         CategorizationRuleEntity entity = new CategorizationRuleEntity();
         entity.setUserId(userId);
         applyRule(
                 userId,
                 entity,
                 priority,
-                field,
-                operator,
-                matchValue,
+                normalizedField,
+                normalizedOperator,
+                normalizedMatch,
                 amountMin,
                 amountMax,
                 targetCategoryId,
@@ -170,5 +234,26 @@ public class CategoryAdminService {
         entity.setAmountMax(amountMax);
         entity.setTargetCategoryId(targetCategoryId);
         entity.setEnabled(enabled);
+    }
+
+    private CategoryEntity requireOwnedCustom(UUID userId, UUID categoryId) {
+        CategoryEntity entity = categories
+                .findByIdAndUserId(categoryId, userId)
+                .orElseThrow(() -> ApiException.of(HttpStatus.NOT_FOUND, "not_found"));
+        if (entity.isSystem()) {
+            throw ApiException.of(HttpStatus.FORBIDDEN, "system_category");
+        }
+        return entity;
+    }
+
+    private void assertNotAncestor(UUID categoryId, UUID parentId) {
+        UUID current = parentId;
+        int guard = 0;
+        while (current != null && guard++ < 32) {
+            if (current.equals(categoryId)) {
+                throw ApiException.of(HttpStatus.BAD_REQUEST, "invalid_request");
+            }
+            current = categories.findById(current).map(CategoryEntity::getParentId).orElse(null);
+        }
     }
 }

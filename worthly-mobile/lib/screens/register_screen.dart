@@ -45,7 +45,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       setState(() {
         _error = error.toString().contains('email_taken')
             ? 'That email is already registered.'
-            : 'Use a valid email and a password of at least 14 characters.';
+            : 'Use a valid email and a password of at least 8 characters.';
       });
     } finally {
       if (mounted) {

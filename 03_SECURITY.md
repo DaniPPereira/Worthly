@@ -22,7 +22,8 @@ assume them.
 
 ## Password and owner
 
-Users register with email + password (minimum 14 characters). Password hashing:
+Users register with email + password (minimum 8 characters). Registration
+is public; there is no email verification in v1. Password hashing:
 Argon2id using Spring Security's maintained encoder with parameters
 calibrated so verification is approximately 250-500ms on production
 hardware. Never hardcode Argon2 parameters without benchmark. Allow passphrases; no arbitrary composition rules.
@@ -92,11 +93,19 @@ payloads. Account IDs are masked or internal opaque IDs.
 
 ## Login protection
 
--   5 failed attempts / 15 minutes -\> temporary 15 minute lock for
-    owner login;
+-   5 consecutive failed passwords -\> 15 minute lock (`locked_until`);
+    lock is time-based and does not permanently disable the account;
 -   exponential delay may supplement lockout;
 -   audit success/failure without password details;
--   reverse proxy rate limit auth endpoints.
+-   application rate limit per client IP, 15 minute window:
+    - `POST /login`, `POST /register`, `POST /api/v1/register`: 20;
+    - `POST /oauth2/token` from a public IP: 20;
+    - `POST /oauth2/token` from loopback/RFC1918 (BFF/Docker): 600,
+      so many users refreshing through `worthly-web` are not one bucket;
+-   429 is `application/problem+json` with `Retry-After`;
+-   reverse proxy rate limit auth endpoints;
+-   do not expose the API port publicly; forwarded client IPs are only
+    trusted from private proxy hops.
 
 ## Provider callbacks
 
@@ -115,3 +124,39 @@ admin. No Docker socket mount.
 No release with exposed DB, secrets in repo, write-enabled T212 key,
 payment initiation, missing TLS, failing authz tests, untested backup
 restore or unresolved known exploitable critical/high vulnerabilities.
+
+## Account deletion
+
+`DELETE /api/v1/me` with `{ "confirm": true }` is the user right-to-erasure
+path for hosted web. The API disconnects and purges every connection,
+deletes sessions and tokens, records `ACCOUNT_DELETED`, nulls
+`audit_event.user_id`, then deletes `app_user`. Settings requires the
+user to type `DELETE` before the request is sent.
+
+## Encrypted raw payloads
+
+`external_transaction.raw_payload_encrypted` is envelope-encrypted and
+given `raw_expires_at` = import time + 30 days. `RawPayloadRetentionJob`
+runs hourly (`0 20 * * * *`) and nulls expired blobs. Setting the expiry
+without a job is not sufficient.
+
+## Hosted web closeout
+
+This instance is operator-hosted (users on the public website, not a
+personal-only self-host). Mobile hardening is out of scope for this
+pass. The web bar is:
+
+| Requirement | Implementation |
+| --- | --- |
+| Account deletion | `DELETE /api/v1/me` + Settings confirm UI |
+| 30-day raw payload wipe | `RawPayloadRetentionJob` |
+| Web idle 30 min / absolute 12 h | BFF `web_session` cookie `maxAge` 1800s; `issuedAt` checked on every proxy; sliding cookie on activity |
+| HSTS | Spring Security on API/login; Next middleware in production; `forward-headers-strategy: framework` in prod |
+| Rate-limit auth | Per public IP 20/15m on login+register; BFF/Docker token 600/15m |
+| Privacy + Terms | `/privacy`, `/terms` linked from login, register, settings |
+| Open registration | `POST /api/v1/register`; no invite in the product UI |
+| Encrypted backups | `infrastructure/backup/backup.sh` + `WORTHLY_BACKUP_KEY_FILE` |
+
+Production must set `WORTHLY_BACKUP_KEY_FILE`. OpenAPI 4.3.0 is the HTTP
+contract for this closeout.
+

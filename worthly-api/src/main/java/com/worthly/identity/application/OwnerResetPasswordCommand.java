@@ -65,7 +65,7 @@ public class OwnerResetPasswordCommand implements ApplicationRunner {
     void reset(Path passwordFile) throws Exception {
         String password = Files.readString(passwordFile, StandardCharsets.UTF_8).strip();
         if (password.length() < OwnerBootstrapRunner.MIN_PASSWORD_LENGTH) {
-            throw new IllegalStateException("Password is shorter than 14 characters");
+            throw new IllegalStateException("Password is shorter than " + OwnerBootstrapRunner.MIN_PASSWORD_LENGTH + " characters");
         }
         AppUserEntity owner = users.findAll().stream()
                 .findFirst()

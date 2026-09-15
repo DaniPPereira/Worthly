@@ -335,4 +335,26 @@ provider allows. **Keep** accounts, transactions, matches, snapshots.
 5. keep `sync_run`, `audit_event`, and the `provider_connection` row
    (`DISABLED` or `CONFIGURATION_REQUIRED`).
 
-Application code never deletes `audit_event`.
+Application code never deletes `audit_event` rows. Account deletion is
+the only update: `audit_event.user_id` is set to NULL after
+`ACCOUNT_DELETED` so `app_user` can be removed.
+
+## account deletion
+
+`DELETE /api/v1/me` with `confirm=true`:
+
+1. disconnect + purge each `provider_connection` (financial history
+   included);
+2. delete leftover `sync_run` and the `provider_connection` row;
+3. delete `transfer_match`, custom `category`, `categorization_rule`,
+   `notification`, `authorization_attempt`, `web_session`, device
+   sessions and refresh tokens, and OAuth2 authorization rows for that
+   principal;
+4. record `ACCOUNT_DELETED`, null `audit_event.user_id`, delete
+   `app_user`.
+
+## raw payload retention
+
+A scheduled job nulls `external_transaction.raw_payload_encrypted` and
+`raw_key_version` when `raw_expires_at <= now()`. Normalised
+`transaction` rows are kept until purge or account deletion.

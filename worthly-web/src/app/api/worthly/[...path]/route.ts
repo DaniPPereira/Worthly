@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiFetch, csrfFromCookie, readSession, refreshTokens } from "@/lib/auth";
-import { SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
-import { encryptPayload } from "@/lib/session";
+import { SESSION_COOKIE, encryptPayload, sessionCookieOptions, sessionStillValid } from "@/lib/session";
 
 export async function GET(request: Request, context: { params: Promise<{ path?: string[] }> }) {
   return proxy(request, context, "GET");
@@ -32,14 +31,14 @@ async function proxy(
     }
   }
   let session = await readSession();
-  if (!session) {
+  if (!session || !sessionStillValid(session)) {
     return NextResponse.json({ title: "Unauthorized" }, { status: 401 });
   }
-  let refreshed: string | undefined;
+  let rolling = await encryptPayload(session);
   if (session.accessExpiresAt - Date.now() < 60_000) {
     try {
-      session = await refreshTokens(session.refreshToken);
-      refreshed = await encryptPayload(session);
+      session = await refreshTokens(session.refreshToken, session.issuedAt);
+      rolling = await encryptPayload(session);
     } catch {
       if (session.accessExpiresAt <= Date.now()) {
         return NextResponse.json({ title: "Unauthorized" }, { status: 401 });
@@ -54,7 +53,7 @@ async function proxy(
   if (suffix.endsWith(".csv")) {
     outbound.set("Accept", "text/csv");
   }
-  if (method !== "GET" && method !== "DELETE") {
+  if (method !== "GET") {
     const text = await request.text();
     if (text.length > 0) {
       outbound.set("Content-Type", request.headers.get("content-type") ?? "application/json");
@@ -79,8 +78,8 @@ async function proxy(
     status: upstream.status,
     headers: inbound,
   });
-  if (refreshed) {
-    response.cookies.set(SESSION_COOKIE, refreshed, sessionCookieOptions);
+  if (rolling) {
+    response.cookies.set(SESSION_COOKIE, rolling, sessionCookieOptions);
   }
   return response;
 }

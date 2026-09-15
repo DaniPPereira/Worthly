@@ -44,11 +44,17 @@ services:
       WORTHLY_ISSUER: ${WORTHLY_ISSUER}
       WORTHLY_WEB_REDIRECT_URI: ${WORTHLY_WEB_REDIRECT_URI}
       WORTHLY_WEB_ORIGIN: ${WORTHLY_WEB_ORIGIN}
+      WORTHLY_ENABLE_BANKING_APPLICATION_ID: ${WORTHLY_ENABLE_BANKING_APPLICATION_ID}
+      WORTHLY_ENABLE_BANKING_PRIVATE_KEY_FILE: /run/secrets/enable_banking_key
+      WORTHLY_ENABLE_BANKING_CALLBACK_URL: ${WORTHLY_ENABLE_BANKING_CALLBACK_URL}
+      WORTHLY_ENABLE_BANKING_WEB_RESULT_URL: ${WORTHLY_ENABLE_BANKING_WEB_RESULT_URL}
+      WORTHLY_REGISTRATION_INVITE: ${WORTHLY_REGISTRATION_INVITE:-}
     secrets:
       - bootstrap_password
       - web_client_secret
       - oauth_signing_key
       - data_key
+      - enable_banking_key
     ports:
       - "8080:8080"
     restart: unless-stopped
@@ -92,6 +98,8 @@ secrets:
     file: ${WORTHLY_OAUTH_SIGNING_KEY_FILE}
   data_key:
     file: ${WORTHLY_DATA_KEY_FILE}
+  enable_banking_key:
+    file: ${WORTHLY_ENABLE_BANKING_PRIVATE_KEY_FILE}
 
 volumes:
   worthly-pg:

@@ -15,6 +15,7 @@ export async function GET(request: Request) {
     scope: "openid profile worthly.read worthly.write",
     code_challenge: pkceChallenge(verifier),
     code_challenge_method: "S256",
+    prompt: "login",
     state,
   });
   const response = NextResponse.redirect(url);

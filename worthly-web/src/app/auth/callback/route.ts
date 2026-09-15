@@ -16,9 +16,13 @@ export async function GET(request: Request) {
   if (!code || !state || !flow || flow.state !== state) {
     return NextResponse.redirect(new URL("/login?error=state", config.origin));
   }
-  const session = await exchangeCode(code, flow.verifier);
-  const response = NextResponse.redirect(new URL("/", config.origin));
-  response.cookies.set(SESSION_COOKIE, await encryptPayload(session), sessionCookieOptions);
-  response.cookies.delete(OAUTH_FLOW_COOKIE);
-  return response;
+  try {
+    const session = await exchangeCode(code, flow.verifier);
+    const response = NextResponse.redirect(new URL("/", config.origin));
+    response.cookies.set(SESSION_COOKIE, await encryptPayload(session), sessionCookieOptions);
+    response.cookies.delete(OAUTH_FLOW_COOKIE);
+    return response;
+  } catch {
+    return NextResponse.redirect(new URL("/login?error=token", config.origin));
+  }
 }

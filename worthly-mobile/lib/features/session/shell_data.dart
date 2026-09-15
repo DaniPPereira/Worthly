@@ -35,6 +35,17 @@ final tabIndexProvider = StateProvider<int>((ref) => 0);
 final connectionsOpenProvider = StateProvider<bool>((ref) => false);
 final connectionResultProvider = StateProvider<String?>((ref) => null);
 
+class TransactionFocus {
+  const TransactionFocus({this.categoryId, this.from, this.to, this.label});
+
+  final String? categoryId;
+  final String? from;
+  final String? to;
+  final String? label;
+}
+
+final transactionFocusProvider = StateProvider<TransactionFocus?>((ref) => null);
+
 String connectionStatusLabel(String status) {
   switch (status) {
     case 'ACTIVE':

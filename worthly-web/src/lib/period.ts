@@ -32,6 +32,22 @@ export function formatMonthLabel(monthKey: string): string {
   return new Intl.DateTimeFormat("en-GB", { month: "short" }).format(date);
 }
 
+export function formatMonthTitle(monthKey: string): string {
+  const [year, month] = monthKey.split("-");
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, 1));
+  return new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(date);
+}
+
+export function monthKeysThrough(endMonthKey: string, count: number): string[] {
+  const keys: string[] = [];
+  let key = endMonthKey;
+  for (let i = 0; i < count; i += 1) {
+    keys.unshift(key);
+    key = shiftMonthKey(key, -1);
+  }
+  return keys;
+}
+
 export function formatInstant(iso: string | null | undefined, timeZone: string): string {
   if (!iso) {
     return "Never";

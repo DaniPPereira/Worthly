@@ -8,12 +8,16 @@ import { apiGet, downloadCsv } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
 import { formatAmount, formatSignedAmount } from "@/lib/money";
 import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
-import type { Account, TransactionPage } from "@/lib/types";
+import { transactionsHref } from "@/lib/transactions-href";
+import type { Account, Transaction, TransactionPage } from "@/lib/types";
 
 const FILTERS = ["All", "Expenses", "Income", "Transfers", "Uncategorized"] as const;
 type Filter = (typeof FILTERS)[number];
 
-function queryFor(filter: Filter, uncategorizedId: string | undefined): string {
+function queryFor(filter: Filter, uncategorizedId: string | undefined, categoryId: string | null): string {
+  if (categoryId) {
+    return `&categoryId=${categoryId}&economicType=EXPENSE`;
+  }
   switch (filter) {
     case "Expenses":
       return "&economicType=EXPENSE";
@@ -33,18 +37,23 @@ export function TransactionsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<Filter>("All");
-  const [search, setSearch] = useState("");
-  const [debounced, setDebounced] = useState("");
+  const [search, setSearch] = useState(searchParams.get("q") ?? "");
+  const [debounced, setDebounced] = useState(searchParams.get("q") ?? "");
+  const [heldTx, setHeldTx] = useState<Transaction | null>(null);
   const [page, setPage] = useState<TransactionPage | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [openId, setOpenId] = useState<string | null>(searchParams.get("open"));
   const [exportError, setExportError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [categoryId, setCategoryId] = useState<string | null>(searchParams.get("categoryId"));
 
   const currentMonth = monthKeyInZone(owner.reportingTimezone);
   const initialRange = monthDateRange(currentMonth);
-  const [from, setFrom] = useState(initialRange.from);
-  const [to, setTo] = useState(initialRange.to);
+  const [from, setFrom] = useState(searchParams.get("from") || initialRange.from);
+  const [to, setTo] = useState(searchParams.get("to") || initialRange.to);
   const uncategorizedId = categories.find((item) => item.code === "uncategorized")?.id;
+  const categoryFilter = categories.find((item) => item.id === categoryId);
+  const categoryChip = categoryFilter && categoryFilter.code !== "uncategorized" ? categoryFilter.label : null;
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebounced(search.trim()), 250);
@@ -57,19 +66,73 @@ export function TransactionsPage() {
 
   useEffect(() => {
     const q = debounced ? `&q=${encodeURIComponent(debounced)}` : "";
-    void apiGet<TransactionPage>(`/transactions?from=${from}&to=${to}&size=50${queryFor(filter, uncategorizedId)}${q}`)
+    void apiGet<TransactionPage>(`/transactions?from=${from}&to=${to}&size=${categoryId ? 200 : 50}${queryFor(filter, uncategorizedId, categoryId)}${q}`)
       .then(setPage)
       .catch(() => setPage({ items: [], page: 0, size: 50, total: 0 }));
-  }, [debounced, filter, from, to, uncategorizedId]);
+  }, [categoryId, debounced, filter, from, to, uncategorizedId, reloadKey]);
 
-  const openTx = useMemo(() => page?.items.find((item) => item.id === openId) ?? null, [openId, page]);
+  useEffect(() => {
+    const nextFrom = searchParams.get("from");
+    const nextTo = searchParams.get("to");
+    const nextCategory = searchParams.get("categoryId");
+    const nextOpen = searchParams.get("open");
+    if (nextFrom) {
+      setFrom(nextFrom);
+    }
+    if (nextTo) {
+      setTo(nextTo);
+    }
+    setCategoryId(nextCategory);
+    setOpenId(nextOpen);
+    const nextQ = searchParams.get("q");
+    if (nextQ != null) {
+      setSearch(nextQ);
+      setDebounced(nextQ);
+    }
+    if (nextCategory && nextCategory === uncategorizedId) {
+      setFilter("Uncategorized");
+    } else if (nextCategory) {
+      setFilter("All");
+    }
+  }, [searchParams, uncategorizedId]);
+
+  const listedTx = useMemo(() => page?.items.find((item) => item.id === openId) ?? null, [openId, page]);
+  const openTx = listedTx ?? (heldTx?.id === openId ? heldTx : null);
   const accountName = (id: string) => accounts.find((item) => item.id === id)?.displayName ?? "Account";
   const accountMask = (id: string) => accounts.find((item) => item.id === id)?.maskedIdentifier ?? "";
+
+  function viewHref(extra: { open?: string | null; categoryId?: string | null } = {}) {
+    const nextCategory = extra.categoryId !== undefined ? extra.categoryId : categoryId;
+    return transactionsHref({
+      from,
+      to,
+      categoryId: nextCategory,
+      economicType: nextCategory ? "EXPENSE" : null,
+      q: search.trim() || null,
+      open: extra.open !== undefined ? extra.open : openId,
+    });
+  }
+
+  function applyFilter(item: Filter) {
+    setFilter(item);
+    setCategoryId(null);
+    router.replace(transactionsHref({ from, to, open: openId, q: search.trim() || null }));
+  }
 
   function applyMonth(monthKey: string) {
     const range = monthDateRange(monthKey);
     setFrom(range.from);
     setTo(range.to);
+    router.replace(
+      transactionsHref({
+        from: range.from,
+        to: range.to,
+        categoryId,
+        economicType: categoryId ? "EXPENSE" : null,
+        open: openId,
+        q: search.trim() || null,
+      }),
+    );
   }
 
   function onFromChange(value: string) {
@@ -97,8 +160,8 @@ export function TransactionsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-        <label style={{ flex: 1, background: "#fff", border: "1px solid rgba(19,26,25,.11)", borderRadius: 10, padding: "10px 13px", display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <label style={{ flex: "1 1 220px", minWidth: 0, background: "#fff", border: "1px solid rgba(19,26,25,.11)", borderRadius: 10, padding: "10px 13px", display: "flex", alignItems: "center", gap: 10 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6B7572" strokeWidth="2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7" />
             <path d="M16.5 16.5 21 21" />
@@ -141,14 +204,18 @@ export function TransactionsPage() {
         </button>
       </div>
       {exportError ? <p style={{ color: "var(--loss)", fontSize: 13, margin: 0 }}>{exportError}</p> : null}
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {FILTERS.map((item) => {
-          const active = filter === item;
+          const active = categoryChip
+            ? false
+            : item === "Uncategorized"
+              ? filter === item || categoryId === uncategorizedId
+              : filter === item && !categoryId;
           return (
             <button
               key={item}
               type="button"
-              onClick={() => setFilter(item)}
+              onClick={() => applyFilter(item)}
               style={{
                 border: `1px solid ${active ? "var(--pine)" : "rgba(19,26,25,.12)"}`,
                 background: active ? "var(--pine)" : "#fff",
@@ -162,6 +229,21 @@ export function TransactionsPage() {
             </button>
           );
         })}
+        {categoryChip ? (
+          <button
+            type="button"
+            style={{
+              border: "1px solid var(--pine)",
+              background: "var(--pine)",
+              color: "var(--cream)",
+              font: "500 12.5px var(--font-sans)",
+              padding: "8px 13px",
+              borderRadius: 9,
+            }}
+          >
+            {categoryChip}
+          </button>
+        ) : null}
         <div style={{ flex: 1 }} />
         <div style={{ alignSelf: "center", fontSize: 11.5, color: "var(--faint)" }}>
           {page ? `${page.items.length} of ${page.total} transactions` : ""}
@@ -208,7 +290,8 @@ export function TransactionsPage() {
                 type="button"
                 onClick={() => {
                   setOpenId(tx.id);
-                  router.replace(`/transactions?open=${tx.id}`);
+                  setHeldTx(tx);
+                  router.replace(viewHref({ open: tx.id }));
                 }}
                 style={{
                   width: "100%",
@@ -289,13 +372,16 @@ export function TransactionsPage() {
           accounts={accounts}
           onClose={() => {
             setOpenId(null);
-            router.replace("/transactions");
+            setHeldTx(null);
+            router.replace(viewHref({ open: null }));
           }}
           onChanged={(next) => {
+            setHeldTx(next);
             setPage((current) =>
               current ? { ...current, items: current.items.map((item) => (item.id === next.id ? next : item)) } : current,
             );
           }}
+          onNeedReload={() => setReloadKey((current) => current + 1)}
         />
       ) : null}
     </div>

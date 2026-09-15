@@ -27,6 +27,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class Trading212ConnectionServiceTest {
@@ -45,6 +46,9 @@ class Trading212ConnectionServiceTest {
 
     @Mock
     AuditService audit;
+
+    @Mock
+    ApplicationEventPublisher events;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -98,7 +102,7 @@ class Trading212ConnectionServiceTest {
         WorthlyProperties properties = new WorthlyProperties();
         properties.getTrading212().setBaseUrl("https://live.trading212.com/api/v0");
         Trading212ConnectionService service = new Trading212ConnectionService(
-                connections, gateway, notifications, crypto, objectMapper, audit, properties);
+                connections, gateway, notifications, crypto, objectMapper, audit, properties, events);
 
         ProviderConnectionEntity saved = service.connect(userId, "key", "secret", "LIVE");
 
@@ -125,6 +129,6 @@ class Trading212ConnectionServiceTest {
         WorthlyProperties properties = new WorthlyProperties();
         properties.getTrading212().setBaseUrl("https://t212.test/api/v0");
         return new Trading212ConnectionService(
-                connections, gateway, notifications, crypto, objectMapper, audit, properties);
+                connections, gateway, notifications, crypto, objectMapper, audit, properties, events);
     }
 }

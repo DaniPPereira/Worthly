@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:worthly_mobile/theme/colors.dart';
+import 'package:worthly_mobile/theme/period.dart';
 
 class WorthlyCard extends StatelessWidget {
   const WorthlyCard({super.key, required this.child, this.padding = const EdgeInsets.all(16)});
@@ -128,6 +129,50 @@ class CurrencyPills extends StatelessWidget {
               backgroundColor: Colors.white,
               showCheckmark: false,
             ),
+          ),
+      ],
+    );
+  }
+}
+
+class MonthNav extends StatelessWidget {
+  const MonthNav({
+    super.key,
+    required this.month,
+    required this.currentMonth,
+    required this.onChange,
+  });
+
+  final String month;
+  final String currentMonth;
+  final ValueChanged<String> onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final atLatest = month.compareTo(currentMonth) >= 0;
+    return Row(
+      children: [
+        IconButton(
+          tooltip: 'Previous month',
+          onPressed: () => onChange(Period.shiftMonthKey(month, -1)),
+          icon: const Icon(Icons.chevron_left),
+        ),
+        Expanded(
+          child: Text(
+            Period.monthTitle(month),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Next month',
+          onPressed: atLatest ? null : () => onChange(Period.shiftMonthKey(month, 1)),
+          icon: const Icon(Icons.chevron_right),
+        ),
+        if (month != currentMonth)
+          TextButton(
+            onPressed: () => onChange(currentMonth),
+            child: const Text('This month'),
           ),
       ],
     );

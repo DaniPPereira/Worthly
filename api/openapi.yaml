@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Worthly API
-  version: 4.2.0
+  version: 4.3.0
   description: |
     Canonical MVP API contract for Worthly.
 
@@ -35,7 +35,7 @@ paths:
       description: |
         Creates an isolated user. Does not issue tokens. The caller then
         signs in through OAuth. Duplicate email is 409 `email_taken`.
-        Password minimum length is 14 characters.
+        Password minimum length is 8 characters.
       requestBody:
         required: true
         content:
@@ -48,6 +48,7 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Owner'}
         '400': {$ref: '#/components/responses/BadRequest'}
+        '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
   /me:
     get:
@@ -75,6 +76,24 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Owner'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    delete:
+      tags: [Identity]
+      operationId: deleteMe
+      security: [{oauth2: [worthly.write]}]
+      description: |
+        Irreversibly deletes the authenticated user after `confirm=true`.
+        Disconnects and purges every connection, removes sessions and tokens,
+        then deletes `app_user`. Audit rows stay with `user_id` nulled.
+        The BFF MUST clear the `web_session` cookie afterwards.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DeleteAccountRequest'}
+      responses:
+        '204': {description: Account deleted}
         '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /me/logout:
@@ -345,6 +364,34 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Category'}
+  /categories/{categoryId}:
+    patch:
+      tags: [Categories]
+      operationId: updateCategory
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/CategoryId'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategoryPatch'}
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Category'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [Categories]
+      operationId: deleteCategory
+      security: [{oauth2: [worthly.write]}]
+      parameters:
+        - {$ref: '#/components/parameters/CategoryId'}
+      responses:
+        '204': {description: Deleted}
+        '404': {$ref: '#/components/responses/NotFound'}
   /categorization-rules:
     get:
       tags: [Categories]
@@ -548,6 +595,7 @@ components:
     AccountId: {name: accountId, in: path, required: true, schema: {type: string, format: uuid}}
     TransactionId: {name: transactionId, in: path, required: true, schema: {type: string, format: uuid}}
     RuleId: {name: ruleId, in: path, required: true, schema: {type: string, format: uuid}}
+    CategoryId: {name: categoryId, in: path, required: true, schema: {type: string, format: uuid}}
     FromDate: {name: from, in: query, schema: {type: string, format: date}}
     ToDate: {name: to, in: query, schema: {type: string, format: date}}
     AccountIdQuery: {name: accountId, in: query, schema: {type: string, format: uuid}}
@@ -580,6 +628,9 @@ components:
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
     Conflict:
       description: Conflict
+      content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
+    Forbidden:
+      description: Forbidden
       content: {application/problem+json: {schema: {$ref: '#/components/schemas/Problem'}}}
   schemas:
     Money:
@@ -619,7 +670,7 @@ components:
       additionalProperties: false
       properties:
         email: {type: string, format: email}
-        password: {type: string, minLength: 14, maxLength: 128}
+        password: {type: string, minLength: 8, maxLength: 128}
         reportingTimezone:
           type: string
           minLength: 1
@@ -627,6 +678,18 @@ components:
         reportingCurrency:
           type: string
           pattern: '^[A-Z]{3}$'
+        invite:
+          type: string
+          maxLength: 128
+          description: Required when the API is configured with an invite code.
+    DeleteAccountRequest:
+      type: object
+      required: [confirm]
+      additionalProperties: false
+      properties:
+        confirm:
+          type: boolean
+          description: Must be true. Any other value is 400 `confirm_required`.
     Device:
       type: object
       required: [id, platform, createdAt, revoked]
@@ -651,6 +714,7 @@ components:
         institutionCountry: {type: string}
         lastSuccessfulSyncAt: {type: string, format: date-time}
         consentExpiresAt: {type: string, format: date-time}
+        lastErrorCode: {type: string}
     BankChoice:
       type: object
       required: [name, country]
@@ -758,6 +822,13 @@ components:
       properties:
         label: {type: string, minLength: 1, maxLength: 80}
         parentId: {type: [string, 'null'], format: uuid}
+    CategoryPatch:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        label: {type: string, minLength: 1, maxLength: 80}
+        parentId: {type: string, format: uuid}
     RuleField:
       type: string
       enum: [MERCHANT, DESCRIPTION, ACCOUNT_ID, DIRECTION]

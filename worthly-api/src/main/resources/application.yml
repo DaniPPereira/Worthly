@@ -46,6 +46,8 @@ worthly:
   bootstrap:
     email: ${WORTHLY_BOOTSTRAP_EMAIL:}
     password-file: ${WORTHLY_BOOTSTRAP_PASSWORD_FILE:}
+  registration:
+    invite-code: ${WORTHLY_REGISTRATION_INVITE:}
   oauth:
     signing-key-file: ${WORTHLY_OAUTH_SIGNING_KEY_FILE:}
     generate-ephemeral-signing-key: ${WORTHLY_OAUTH_GENERATE_EPHEMERAL_SIGNING_KEY:false}
@@ -78,3 +80,4 @@ worthly:
     api-secret-file: ${WORTHLY_T212_API_SECRET_FILE:}
   sync:
     tick: ${WORTHLY_SYNC_TICK:PT15M}
+    auto-on-connect: ${WORTHLY_SYNC_AUTO_ON_CONNECT:true}

@@ -262,6 +262,34 @@ class BankingDomainIT extends AbstractIntegrationTest {
                 .isFalse();
     }
 
+    @Test
+    void reauthNotificationClearsWhenConnectionIsHealthyAgain() throws Exception {
+        String token = OwnerAuthClient.accessToken(mockMvc, objectMapper);
+        UUID connectionId = connect(token, "Banco Santander Totta", "santander-code");
+        ProviderConnectionEntity entity = connections.findById(connectionId).orElseThrow();
+        entity.setStatus("REAUTH_REQUIRED");
+        connections.save(entity);
+        syncScheduler.tick();
+
+        entity = connections.findById(connectionId).orElseThrow();
+        entity.setStatus("ACTIVE");
+        connections.save(entity);
+
+        MvcResult listed = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/notifications")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode notifications = objectMapper.readTree(listed.getResponse().getContentAsString());
+        boolean sawReauth = false;
+        for (JsonNode node : notifications) {
+            if ("CONNECTION_REAUTH_REQUIRED".equals(node.get("type").asText())) {
+                sawReauth = true;
+                assertThat(node.get("readAt").isNull()).isFalse();
+            }
+        }
+        assertThat(sawReauth).isTrue();
+    }
+
     private UUID connect(String token, String bank, String code) throws Exception {
         MvcResult authorize = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/enable-banking/authorize")
                         .header("Authorization", "Bearer " + token)

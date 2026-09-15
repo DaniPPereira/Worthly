@@ -30,7 +30,7 @@ export default function RegisterPage() {
         return;
       }
       if (response.status === 400) {
-        setError("Use a valid email and a password of at least 14 characters.");
+        setError("Use a valid email and a password of at least 8 characters.");
         return;
       }
       if (!response.ok) {
@@ -89,7 +89,7 @@ export default function RegisterPage() {
             Password
             <PasswordInput
               autoComplete="new-password"
-              minLength={14}
+              minLength={8}
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -102,6 +102,11 @@ export default function RegisterPage() {
         <a href="/login" className="muted" style={{ display: "block", marginTop: 16, fontSize: 13 }}>
           Already have an account? Sign in
         </a>
+        <p className="muted" style={{ marginTop: 18, fontSize: 12 }}>
+          <a href="/privacy">Privacy</a>
+          {" · "}
+          <a href="/terms">Terms</a>
+        </p>
       </div>
     </main>
   );

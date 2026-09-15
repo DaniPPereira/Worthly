@@ -40,6 +40,7 @@ public abstract class AbstractIntegrationTest {
         registry.add("worthly.bootstrap.password-file", () -> BOOTSTRAP_PASSWORD_FILE.toString());
         registry.add("management.server.port", () -> "0");
         registry.add("worthly.issuer", () -> "http://localhost:0");
+        registry.add("worthly.sync.auto-on-connect", () -> "false");
     }
 
     @LocalServerPort

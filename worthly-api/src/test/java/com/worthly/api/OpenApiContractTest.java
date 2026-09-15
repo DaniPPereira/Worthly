@@ -18,7 +18,7 @@ class OpenApiContractTest {
         Map<String, Object> root = new Yaml().load(Files.readString(spec));
         assertThat(root.get("openapi")).isEqualTo("3.1.0");
         Map<String, Object> info = (Map<String, Object>) root.get("info");
-        assertThat(info.get("version")).isEqualTo("4.1.0");
+        assertThat(info.get("version")).isEqualTo("4.3.0");
         Map<String, Object> paths = (Map<String, Object>) root.get("paths");
         assertThat(paths).containsKeys(
                 "/me",
@@ -41,6 +41,6 @@ class OpenApiContractTest {
                 "/notifications",
                 "/exports/transactions.csv");
         Map<String, Object> me = (Map<String, Object>) paths.get("/me");
-        assertThat(me).containsKeys("get", "patch");
+        assertThat(me).containsKeys("get", "patch", "delete");
     }
 }

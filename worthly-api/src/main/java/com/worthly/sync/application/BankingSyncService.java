@@ -1,10 +1,9 @@
 package com.worthly.sync.application;
 
 import com.worthly.audit.application.AuditService;
-import com.worthly.banking.accounts.adapter.out.persistence.BalanceSnapshotEntity;
-import com.worthly.banking.accounts.adapter.out.persistence.BalanceSnapshotRepository;
 import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountEntity;
 import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountRepository;
+import com.worthly.banking.application.BalanceSnapshotImporter;
 import com.worthly.banking.application.BankingMappings;
 import com.worthly.banking.transactions.adapter.out.persistence.ExternalTransactionEntity;
 import com.worthly.banking.transactions.adapter.out.persistence.ExternalTransactionRepository;
@@ -32,6 +31,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -42,14 +43,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class BankingSyncService {
 
+    private static final Logger log = LoggerFactory.getLogger(BankingSyncService.class);
     private static final Duration RAW_RETENTION = Duration.ofDays(30);
-    private static final int MAX_PAGES = 100;
+    private static final int MAX_PAGES = 250;
 
     private final ConnectionService connectionService;
     private final EnableBankingGateway gateway;
     private final ProviderConnectionRepository connections;
     private final FinancialAccountRepository accounts;
-    private final BalanceSnapshotRepository balances;
+    private final BalanceSnapshotImporter balanceImporter;
     private final ExternalTransactionRepository externalTransactions;
     private final TransactionRepository transactions;
     private final SyncRunRepository syncRuns;
@@ -67,7 +69,7 @@ public class BankingSyncService {
             EnableBankingGateway gateway,
             ProviderConnectionRepository connections,
             FinancialAccountRepository accounts,
-            BalanceSnapshotRepository balances,
+            BalanceSnapshotImporter balanceImporter,
             ExternalTransactionRepository externalTransactions,
             TransactionRepository transactions,
             SyncRunRepository syncRuns,
@@ -83,7 +85,7 @@ public class BankingSyncService {
         this.gateway = gateway;
         this.connections = connections;
         this.accounts = accounts;
-        this.balances = balances;
+        this.balanceImporter = balanceImporter;
         this.externalTransactions = externalTransactions;
         this.transactions = transactions;
         this.syncRuns = syncRuns;
@@ -152,16 +154,20 @@ public class BankingSyncService {
             if ("REAUTH_REQUIRED".equals(mapped) || "DISABLED".equals(mapped) || "ERROR".equals(mapped)) {
                 return fail(run, connection, "reauth_required", mapped);
             }
-            for (EnableBankingModels.ProviderAccount account : session.accounts()) {
+            List<EnableBankingModels.ProviderAccount> sessionAccounts =
+                    session.accounts() == null ? List.of() : session.accounts();
+            for (EnableBankingModels.ProviderAccount account : sessionAccounts) {
                 connectionService.upsertAccount(connection, account);
             }
             int imported = 0;
             int updated = 0;
-            LocalDate dateTo = LocalDate.now(ZoneOffset.UTC);
-            LocalDate dateFrom = dateTo.minusDays(properties.getTransactionLookback().toDays());
+            boolean fullHistory = "MANUAL".equals(triggerType) || connection.getLastSuccessfulSyncAt() == null;
+            LocalDate dateTo = fullHistory ? null : LocalDate.now(ZoneOffset.UTC);
+            LocalDate dateFrom = fullHistory ? null : dateTo.minusDays(properties.getTransactionLookback().toDays());
+            String strategy = fullHistory ? "longest" : "default";
             for (FinancialAccountEntity account : accounts.findByConnectionId(connection.getId())) {
-                imported += importBalances(account);
-                int[] counts = importTransactions(account, dateFrom, dateTo);
+                imported += balanceImporter.importBalances(account);
+                int[] counts = importTransactions(account, dateFrom, dateTo, strategy);
                 imported += counts[0];
                 updated += counts[1];
             }
@@ -173,6 +179,7 @@ public class BankingSyncService {
             connection.setLastErrorCode(null);
             connections.save(connection);
             syncRuns.save(run);
+            notificationService.reconcileConnectionAlerts(userId);
             transferMatching.recalculate(userId);
             auditService.record(
                     userId,
@@ -191,6 +198,13 @@ public class BankingSyncService {
         } catch (EnableBankingGateway.ProviderException ex) {
             String mapped = mapProviderFailure(ex);
             return fail(run, connection, ex.code(), mapped);
+        } catch (RuntimeException ex) {
+            log.info(
+                    "Sync failed for connection {} ({})",
+                    connectionId,
+                    ex.getClass().getSimpleName());
+            String code = sessionUnreadable(ex) ? "session_unreadable" : "sync_failed";
+            return fail(run, connection, code, "ERROR");
         }
     }
 
@@ -201,41 +215,32 @@ public class BankingSyncService {
         return syncRuns.findByConnectionIdOrderByStartedAtDesc(connectionId, pageable);
     }
 
-    private int importBalances(FinancialAccountEntity account) {
-        List<EnableBankingModels.ProviderBalance> providerBalances =
-                gateway.listBalances(account.getProviderAccountAlias());
-        int imported = 0;
-        for (EnableBankingModels.ProviderBalance balance : providerBalances) {
-            String sourceHash = TokenHashes.sha256(String.join(
-                    "|",
-                    nullToEmpty(balance.balanceType()),
-                    balance.amount() == null ? "0" : balance.amount().toPlainString(),
-                    nullToEmpty(balance.currency()),
-                    String.valueOf(balance.referenceDate())));
-            if (balances.findByAccountIdAndSourceHash(account.getId(), sourceHash).isPresent()) {
-                continue;
-            }
-            BalanceSnapshotEntity entity = new BalanceSnapshotEntity();
-            entity.setAccountId(account.getId());
-            entity.setBalanceType(balance.balanceType() == null ? "unknown" : balance.balanceType());
-            entity.setAmount(balance.amount() == null ? BigDecimal.ZERO : balance.amount());
-            entity.setCurrency(balance.currency() == null ? account.getCurrency() : balance.currency().toUpperCase());
-            entity.setObservedAt(balance.observedAt() == null ? Instant.now() : balance.observedAt());
-            entity.setReferenceDate(balance.referenceDate());
-            entity.setSourceHash(sourceHash);
-            balances.save(entity);
-            imported++;
-        }
-        return imported;
-    }
-
-    private int[] importTransactions(FinancialAccountEntity account, LocalDate dateFrom, LocalDate dateTo) {
+    private int[] importTransactions(
+            FinancialAccountEntity account, LocalDate dateFrom, LocalDate dateTo, String strategy) {
         int imported = 0;
         int updated = 0;
         String continuation = null;
+        String activeStrategy = strategy;
+        LocalDate activeFrom = dateFrom;
+        LocalDate activeTo = dateTo;
         for (int page = 0; page < MAX_PAGES; page++) {
-            EnableBankingModels.TransactionPage result =
-                    gateway.listTransactions(account.getProviderAccountAlias(), dateFrom, dateTo, continuation);
+            EnableBankingModels.TransactionPage result;
+            try {
+                result = gateway.listTransactions(
+                        account.getProviderAccountAlias(), activeFrom, activeTo, continuation, activeStrategy);
+            } catch (EnableBankingGateway.ProviderException ex) {
+                if (page == 0 && "WRONG_TRANSACTIONS_PERIOD".equalsIgnoreCase(ex.code())) {
+                    LocalDate fallbackTo = LocalDate.now(ZoneOffset.UTC);
+                    activeStrategy = "default";
+                    activeFrom = fallbackTo.minusDays(89);
+                    activeTo = fallbackTo;
+                    continuation = null;
+                    result = gateway.listTransactions(
+                            account.getProviderAccountAlias(), activeFrom, activeTo, null, activeStrategy);
+                } else {
+                    throw ex;
+                }
+            }
             for (EnableBankingModels.ProviderTransaction tx : result.transactions()) {
                 int outcome = persistTransaction(account, tx);
                 if (outcome == 1) {
@@ -345,6 +350,11 @@ public class BankingSyncService {
             notificationService.remind(connection.getUserId(), "CONFIGURATION_REQUIRED");
         }
         return run;
+    }
+
+    private static boolean sessionUnreadable(RuntimeException ex) {
+        String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase();
+        return ex instanceof IllegalStateException && message.contains("decrypt");
     }
 
     private static String mapProviderFailure(EnableBankingGateway.ProviderException ex) {

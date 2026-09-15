@@ -26,7 +26,11 @@ public interface EnableBankingGateway {
     List<EnableBankingModels.ProviderBalance> listBalances(String accountUid);
 
     EnableBankingModels.TransactionPage listTransactions(
-            String accountUid, LocalDate dateFrom, LocalDate dateTo, String continuationKey);
+            String accountUid,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            String continuationKey,
+            String strategy);
 
     void deleteSession(String sessionId);
 

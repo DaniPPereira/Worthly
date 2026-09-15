@@ -12,4 +12,6 @@ public interface CategorizationRuleRepository extends JpaRepository<Categorizati
     List<CategorizationRuleEntity> findByUserIdAndEnabledIsTrueOrderByPriorityAsc(UUID userId);
 
     Optional<CategorizationRuleEntity> findByIdAndUserId(UUID id, UUID userId);
+
+    List<CategorizationRuleEntity> findByTargetCategoryId(UUID targetCategoryId);
 }

@@ -5,23 +5,31 @@ import { apiGet, apiSend } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
 import { formatAmount, formatSignedAmount } from "@/lib/money";
 import { formatInstant } from "@/lib/period";
-import type { Account, Category, Transaction, TransferMatch } from "@/lib/types";
+import { customCategories, defaultParentId, parentCategories } from "@/lib/categories";
+import { merchantRuleSuggestion, type MerchantRuleHint } from "@/lib/merchant-rule";
+import type { Account, CategorizationRule, Category, Transaction, TransferMatch } from "@/lib/types";
 
 export function TransactionDrawer({
   transaction,
   accounts,
   onClose,
   onChanged,
+  onNeedReload,
 }: {
   transaction: Transaction;
   accounts: Account[];
   onClose: () => void;
   onChanged: (next: Transaction) => void;
+  onNeedReload?: () => void;
 }) {
-  const { owner, privacy, categories } = useAppData();
+  const { owner, privacy, categories, refresh } = useAppData();
   const [note, setNote] = useState(transaction.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [suggestions, setSuggestions] = useState<TransferMatch[]>([]);
+  const [rules, setRules] = useState<CategorizationRule[]>([]);
+  const [ruleHint, setRuleHint] = useState<(MerchantRuleHint & { categoryId: string; categoryLabel: string }) | null>(null);
+  const [newLabel, setNewLabel] = useState("");
+  const [newParentId, setNewParentId] = useState(defaultParentId(categories));
   const account = accounts.find((item) => item.id === transaction.accountId);
   const category = categories.find((item) => item.id === transaction.categoryId);
   const credit = transaction.direction === "CREDIT";
@@ -32,9 +40,17 @@ export function TransactionDrawer({
   }, [transaction.id, transaction.notes]);
 
   useEffect(() => {
+    setNewParentId((current) => current || defaultParentId(categories));
+  }, [categories]);
+
+  useEffect(() => {
+    setRuleHint(null);
     void apiGet<TransferMatch[]>("/transfer-matches?status=SUGGESTED")
       .then(setSuggestions)
       .catch(() => setSuggestions([]));
+    void apiGet<CategorizationRule[]>("/categorization-rules")
+      .then(setRules)
+      .catch(() => setRules([]));
   }, [transaction.id]);
 
   const related = suggestions.filter(
@@ -45,6 +61,9 @@ export function TransactionDrawer({
     const preferred = ["Groceries", "Housing", "Transport", "Dining", "Investing", "Income", "Uncategorized"];
     const byLabel = new Map(categories.map((item) => [item.label, item]));
     const ordered: Category[] = [];
+    for (const item of customCategories(categories)) {
+      ordered.push(item);
+    }
     for (const label of preferred) {
       const found = byLabel.get(label) ?? categories.find((item) => item.label.toLowerCase().includes(label.toLowerCase()));
       if (found && !ordered.some((item) => item.id === found.id)) {
@@ -52,7 +71,7 @@ export function TransactionDrawer({
       }
     }
     for (const item of categories) {
-      if (ordered.length >= 8) {
+      if (ordered.length >= 10) {
         break;
       }
       if (!ordered.some((existing) => existing.id === item.id)) {
@@ -65,9 +84,76 @@ export function TransactionDrawer({
   async function patch(body: { categoryId?: string | null; notes?: string | null }) {
     setSaving(true);
     try {
+      const previousCategoryId = transaction.categoryId;
       const next = await apiSend<Transaction>("PATCH", `/transactions/${transaction.id}`, body);
       if (next) {
         onChanged(next);
+      }
+      if (next && body.categoryId) {
+        const category = categories.find((item) => item.id === body.categoryId);
+        const hint = merchantRuleSuggestion({
+          merchant: next.merchant,
+          description: next.description,
+          categoryCode: category?.code,
+          previousCategoryId,
+          nextCategoryId: body.categoryId,
+          rules,
+        });
+        setRuleHint(hint && category ? { ...hint, categoryId: category.id, categoryLabel: category.label } : null);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function createMerchantRule() {
+    if (!ruleHint) {
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiSend("POST", "/categorization-rules", {
+        priority: 0,
+        field: ruleHint.field,
+        operator: ruleHint.operator,
+        matchValue: ruleHint.matchValue,
+        targetCategoryId: ruleHint.categoryId,
+      });
+      setRuleHint(null);
+      const nextRules = await apiGet<CategorizationRule[]>("/categorization-rules").catch(() => rules);
+      setRules(nextRules);
+      onNeedReload?.();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function createCategory() {
+    const label = newLabel.trim();
+    if (!label || !newParentId) {
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await apiSend<Category>("POST", "/categories", { label, parentId: newParentId });
+      await refresh();
+      if (!created) {
+        return;
+      }
+      setNewLabel("");
+      const previousCategoryId = transaction.categoryId;
+      const next = await apiSend<Transaction>("PATCH", `/transactions/${transaction.id}`, { categoryId: created.id });
+      if (next) {
+        onChanged(next);
+        const hint = merchantRuleSuggestion({
+          merchant: next.merchant,
+          description: next.description,
+          categoryCode: created.code,
+          previousCategoryId,
+          nextCategoryId: created.id,
+          rules,
+        });
+        setRuleHint(hint ? { ...hint, categoryId: created.id, categoryLabel: created.label } : null);
       }
     } finally {
       setSaving(false);
@@ -118,14 +204,33 @@ export function TransactionDrawer({
         privacy,
       );
 
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
   return (
-    <div style={{ position: "absolute", inset: 0, zIndex: 70, display: "flex", justifyContent: "flex-end" }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 80,
+        display: "flex",
+        justifyContent: "flex-end",
+        overflow: "hidden",
+      }}
+    >
       <button type="button" aria-label="Close transaction" onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(19,26,25,.34)", border: "none" }} />
       <div
         style={{
           position: "relative",
-          width: 420,
+          width: "min(420px, 100%)",
           height: "100%",
+          minHeight: 0,
+          maxHeight: "100%",
           background: "var(--paper)",
           borderLeft: "1px solid rgba(19,26,25,.12)",
           padding: "24px 26px",
@@ -193,6 +298,92 @@ export function TransactionDrawer({
             );
           })}
         </div>
+        <select
+          value={transaction.categoryId ?? ""}
+          disabled={saving}
+          onChange={(event) => {
+            if (event.target.value) {
+              void patch({ categoryId: event.target.value });
+            }
+          }}
+          style={{
+            marginTop: 10,
+            width: "100%",
+            border: "1px solid rgba(19,26,25,.12)",
+            borderRadius: 8,
+            padding: "8px 10px",
+            background: "#fff",
+            font: "500 12.5px var(--font-sans)",
+          }}
+        >
+          <option value="" disabled>
+            All categories
+          </option>
+          {categories.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        <div className="card" style={{ marginTop: 10, padding: "13px 15px", borderRadius: 13, display: "grid", gap: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "var(--faint)" }}>New category</div>
+          <input
+            value={newLabel}
+            onChange={(event) => setNewLabel(event.target.value)}
+            maxLength={80}
+            placeholder="Name, e.g. Pets"
+            style={{
+              width: "100%",
+              border: "1px solid rgba(19,26,25,.12)",
+              borderRadius: 8,
+              padding: "8px 10px",
+              font: "500 13px var(--font-sans)",
+            }}
+          />
+          <select
+            value={newParentId}
+            onChange={(event) => setNewParentId(event.target.value)}
+            style={{
+              width: "100%",
+              border: "1px solid rgba(19,26,25,.12)",
+              borderRadius: 8,
+              padding: "8px 10px",
+              background: "#fff",
+              font: "500 12.5px var(--font-sans)",
+            }}
+          >
+            {parentCategories(categories).map((item) => (
+              <option key={item.id} value={item.id}>
+                Under {item.label}
+              </option>
+            ))}
+          </select>
+          <button type="button" className="btn btn-primary" disabled={saving || !newLabel.trim() || !newParentId} onClick={() => void createCategory()}>
+            Create and use
+          </button>
+        </div>
+        {ruleHint ? (
+          <div className="card" style={{ marginTop: 12, padding: "13px 15px", borderRadius: 13 }}>
+            <div style={{ fontWeight: 600, fontSize: 13.5 }}>
+              {ruleHint.field === "DESCRIPTION"
+                ? `Always categorize descriptions containing “${ruleHint.display}” as ${ruleHint.categoryLabel}?`
+                : ruleHint.operator === "EQUALS"
+                  ? `Always categorize “${ruleHint.display}” as ${ruleHint.categoryLabel}?`
+                  : `Always categorize merchants containing “${ruleHint.display}” as ${ruleHint.categoryLabel}?`}
+            </div>
+            <div className="muted" style={{ marginTop: 6 }}>
+              Future and other non-manual transactions matching this {ruleHint.field === "DESCRIPTION" ? "description" : "merchant"} get this category. This row stays a manual choice.
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button type="button" className="btn btn-ghost" disabled={saving} onClick={() => setRuleHint(null)}>
+                Only this one
+              </button>
+              <button type="button" className="btn btn-primary" disabled={saving} onClick={() => void createMerchantRule()}>
+                Always
+              </button>
+            </div>
+          </div>
+        ) : null}
         <div className="card" style={{ marginTop: 16, padding: "13px 15px", borderRadius: 13 }}>
           <div style={{ fontSize: 11, fontWeight: 500, color: "var(--faint)" }}>Note</div>
           <textarea

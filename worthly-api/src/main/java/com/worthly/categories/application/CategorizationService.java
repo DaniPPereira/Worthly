@@ -175,15 +175,44 @@ public class CategorizationService {
                 return entry.code();
             }
         }
+        String longest = "";
+        String code = null;
         for (HeuristicCatalog.Entry entry : heuristics.entries()) {
             String key = TextNormalizer.normalize(entry.key());
-            if (key.length() <= 4) {
+            if (key.isEmpty() || key.length() <= longest.length()) {
                 continue;
             }
-            if (merchant.contains(key) || description.contains(key)) {
-                return entry.code();
+            if (!matchesHeuristic(merchant, key) && !matchesHeuristic(description, key)) {
+                continue;
             }
+            longest = key;
+            code = entry.code();
         }
-        return null;
+        return code;
+    }
+
+    private static boolean matchesHeuristic(String haystack, String key) {
+        if (key.length() <= 4) {
+            return isWholeToken(haystack, key);
+        }
+        return haystack.contains(key);
+    }
+
+    private static boolean isWholeToken(String haystack, String key) {
+        int from = 0;
+        while (from <= haystack.length() - key.length()) {
+            int index = haystack.indexOf(key, from);
+            if (index < 0) {
+                return false;
+            }
+            boolean before = index == 0 || !Character.isLetterOrDigit(haystack.charAt(index - 1));
+            int end = index + key.length();
+            boolean after = end == haystack.length() || !Character.isLetterOrDigit(haystack.charAt(end));
+            if (before && after) {
+                return true;
+            }
+            from = index + 1;
+        }
+        return false;
     }
 }

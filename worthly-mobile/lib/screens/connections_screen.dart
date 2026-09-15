@@ -26,6 +26,8 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   String? _busyId;
   String? _t212Error;
   String? _authError;
+  String? _syncError;
+  bool _t212Open = false;
   final _t212Key = TextEditingController();
   final _t212Secret = TextEditingController();
 
@@ -101,11 +103,22 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   }
 
   Future<void> _sync(Connection connection) async {
-    setState(() => _busyId = connection.id);
+    setState(() {
+      _busyId = connection.id;
+      _syncError = null;
+    });
     try {
       await ref.read(worthlyClientProvider).send('POST', '/connections/${connection.id}/sync');
       ref.invalidate(shellDataProvider);
       await _loadLog();
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _syncError = connection.lastErrorCode == 'session_unreadable'
+              ? 'This bank session can no longer be read. Disconnect and connect again.'
+              : 'Sync did not finish. Try again, or disconnect and reconnect the bank.';
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _busyId = null);
@@ -150,11 +163,15 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
         body: {'apiKey': _t212Key.text.trim(), 'apiSecret': _t212Secret.text, 'environment': 'LIVE'},
         parse: parseConnection,
       );
-      _t212Key.clear();
-      _t212Secret.clear();
       ref.invalidate(shellDataProvider);
       if (connection?.status == 'ERROR' && mounted) {
         setState(() => _t212Error = 'Trading 212 rejected those credentials. Use a read-only Live key from Trading 212 Invest (or Stocks ISA) and try again.');
+      } else {
+        _t212Key.clear();
+        _t212Secret.clear();
+        if (mounted) {
+          setState(() => _t212Open = false);
+        }
       }
     } catch (_) {
       if (mounted) {
@@ -198,7 +215,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                 color: Color(0x1F14654A),
                 border: Color(0x4D14654A),
                 textColor: WorthlyColors.gain,
-                text: 'Bank connection completed. Worthly validated the returning state before storing accounts.',
+                text: 'Bank connection completed. Balances should appear on the dashboard shortly — tap Sync now if they are still empty.',
               ),
             if (result == 'error')
               const _Banner(
@@ -207,10 +224,17 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                 textColor: Color(0xFF6E5A2E),
                 text: 'Bank authorization did not finish. You can try again — Worthly never sees your bank password.',
               ),
+            if (_syncError != null)
+              _Banner(
+                color: WorthlyColors.warnBg,
+                border: const Color(0x4D8A6412),
+                textColor: const Color(0xFF6E5A2E),
+                text: _syncError!,
+              ),
             if (connections.isEmpty)
               const EmptyState(
                 title: 'No providers yet',
-                body: 'Connect Santander Portugal or Revolut through Enable Banking, or add Trading 212 with a read-only API key from this screen.',
+                body: 'Connect a bank or Trading 212 from the section below.',
               )
             else
               for (final connection in connections) ...[
@@ -222,13 +246,14 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                   onDisconnect: () => _disconnect(connection),
                   onPurge: () => setState(() => _purge = connection),
                   onReauth: () => setState(() => _handoff = connection),
-                  showTrading212Form: connection.provider == 'TRADING_212' &&
-                      (connection.status == 'CONFIGURATION_REQUIRED' || connection.status == 'ERROR'),
+                  onReplaceTrading212: connection.provider == 'TRADING_212' &&
+                          (connection.status == 'CONFIGURATION_REQUIRED' || connection.status == 'ERROR')
+                      ? () => setState(() {
+                            _t212Error = null;
+                            _t212Open = true;
+                          })
+                      : null,
                   t212Error: connection.provider == 'TRADING_212' ? _t212Error : null,
-                  t212Key: _t212Key,
-                  t212Secret: _t212Secret,
-                  t212Busy: _busyId == 'trading-212',
-                  onSaveTrading212: _connectTrading212,
                 ),
                 const SizedBox(height: 12),
               ],
@@ -238,7 +263,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                 children: [
                   Text('CONNECT A BANK', style: labelStyle()),
                   const SizedBox(height: 14),
-                  if (unused.isNotEmpty)
+                  if (unused.isNotEmpty || !hasTrading212)
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -248,6 +273,15 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                             onPressed: () => _authorize(bank.name, bank.country),
                             style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
                             child: Text('Connect ${bank.name}'),
+                          ),
+                        if (!hasTrading212)
+                          FilledButton(
+                            onPressed: () => setState(() {
+                              _t212Error = null;
+                              _t212Open = true;
+                            }),
+                            style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
+                            child: const Text('Connect Trading 212'),
                           ),
                       ],
                     )
@@ -268,13 +302,13 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                     )
                   else
                     const Text(
-                      'All supported banks for Portugal are already connected.',
+                      'All supported providers are already connected.',
                       style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
                     ),
-                  if (unused.isNotEmpty) ...[
+                  if (unused.isNotEmpty || !hasTrading212) ...[
                     const SizedBox(height: 12),
                     const Text(
-                      'Opens your bank in the system browser. You confirm there — Worthly never sees your credentials.',
+                      'Banks open in the system browser for Open Banking. Trading 212 uses a read-only API key — Worthly never sees your login password.',
                       style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
                     ),
                   ],
@@ -286,33 +320,6 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            if (!hasTrading212) ...[
-              WorthlyCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('CONNECT TRADING 212', style: labelStyle()),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Paste a read-only Live API key from Trading 212 Invest (or Stocks ISA). Crypto is a separate Trading 212 account and is not included. Worthly encrypts the key on the server and keeps it until you replace it.',
-                      style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
-                    ),
-                    if (_t212Error != null) ...[
-                      const SizedBox(height: 10),
-                      Text(_t212Error!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 12)),
-                    ],
-                    const SizedBox(height: 12),
-                    _Trading212Fields(
-                      apiKey: _t212Key,
-                      apiSecret: _t212Secret,
-                    ),
-                    const SizedBox(height: 12),
-                    PineButton(label: 'Save read-only key', onPressed: _busyId == 'trading-212' ? null : _connectTrading212),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
             WorthlyCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,6 +359,20 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
             ),
           ],
         ),
+        if (_t212Open)
+          _Trading212Dialog(
+            apiKey: _t212Key,
+            apiSecret: _t212Secret,
+            error: _t212Error,
+            busy: _busyId == 'trading-212',
+            onCancel: _busyId == 'trading-212'
+                ? null
+                : () => setState(() {
+                      _t212Open = false;
+                      _t212Error = null;
+                    }),
+            onSubmit: _connectTrading212,
+          ),
         if (_handoff != null)
           _HandoffDialog(
             name: _handoff!.label,
@@ -400,12 +421,8 @@ class _ConnectionCard extends StatelessWidget {
     required this.onDisconnect,
     required this.onPurge,
     required this.onReauth,
-    this.showTrading212Form = false,
+    this.onReplaceTrading212,
     this.t212Error,
-    this.t212Key,
-    this.t212Secret,
-    this.t212Busy = false,
-    this.onSaveTrading212,
   });
 
   final Connection connection;
@@ -415,12 +432,8 @@ class _ConnectionCard extends StatelessWidget {
   final VoidCallback onDisconnect;
   final VoidCallback onPurge;
   final VoidCallback onReauth;
-  final bool showTrading212Form;
+  final VoidCallback? onReplaceTrading212;
   final String? t212Error;
-  final TextEditingController? t212Key;
-  final TextEditingController? t212Secret;
-  final bool t212Busy;
-  final VoidCallback? onSaveTrading212;
 
   @override
   Widget build(BuildContext context) {
@@ -463,6 +476,8 @@ class _ConnectionCard extends StatelessWidget {
           _row('Last successful sync', Period.instant(connection.lastSuccessfulSyncAt, timezone)),
           _row(consent, consentValue, warn: needsAuth || connection.status == 'CONFIGURATION_REQUIRED'),
           _row('Access', 'Read-only'),
+          if (connection.lastErrorCode != null && connection.lastErrorCode!.isNotEmpty)
+            _row('Last error', connection.lastErrorCode!.replaceAll('_', ' '), warn: true),
           const SizedBox(height: 14),
           if (needsAuth && bank) ...[
             const Text(
@@ -471,7 +486,7 @@ class _ConnectionCard extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             PineButton(label: 'Reauthorize in browser', onPressed: busy ? null : onReauth),
-          ] else if (showTrading212Form) ...[
+          ] else if (onReplaceTrading212 != null) ...[
             if (t212Error != null)
               Text(t212Error!, style: const TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.loss)),
             const Text(
@@ -479,13 +494,7 @@ class _ConnectionCard extends StatelessWidget {
               style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
             ),
             const SizedBox(height: 10),
-            if (t212Key != null && t212Secret != null)
-              _Trading212Fields(
-                apiKey: t212Key!,
-                apiSecret: t212Secret!,
-              ),
-            const SizedBox(height: 10),
-            PineButton(label: 'Save read-only key', onPressed: t212Busy ? null : onSaveTrading212),
+            PineButton(label: 'Replace API key', onPressed: busy ? null : onReplaceTrading212),
           ] else if (connection.status == 'CONFIGURATION_REQUIRED')
             const Text(
               'Add a read-only Trading 212 API key from this screen.',
@@ -541,6 +550,89 @@ class _Banner extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(12), border: Border.all(color: border)),
       child: Text(text, style: TextStyle(color: textColor, fontSize: 13, height: 1.45)),
+    );
+  }
+}
+
+class _Trading212Dialog extends StatelessWidget {
+  const _Trading212Dialog({
+    required this.apiKey,
+    required this.apiSecret,
+    required this.error,
+    required this.busy,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  static final _helpUri = Uri.parse(
+    'https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key',
+  );
+
+  final TextEditingController apiKey;
+  final TextEditingController apiSecret;
+  final String? error;
+  final bool busy;
+  final VoidCallback? onCancel;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: WorthlyColors.ink.withValues(alpha: 0.46),
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Container(
+            width: 460,
+            padding: const EdgeInsets.all(26),
+            decoration: BoxDecoration(color: WorthlyColors.paper, borderRadius: BorderRadius.circular(18)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Connect Trading 212', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                const SizedBox(height: 8),
+                const Text(
+                  'Trading 212 is not Open Banking. Worthly uses a read-only Live API key from Invest or Stocks ISA — not Crypto, and not your login password.',
+                  style: TextStyle(fontSize: 12.5, height: 1.55, color: WorthlyColors.muted),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '1. In Trading 212, open Settings → API (Beta) → Generate API key.\n'
+                  '2. Enable read access only (account, portfolio, history). Do not enable orders.\n'
+                  '3. Copy the secret immediately — Trading 212 shows it once.',
+                  style: TextStyle(fontSize: 13, height: 1.55, color: WorthlyColors.muted),
+                ),
+                TextButton(
+                  onPressed: () => launchUrl(_helpUri, mode: LaunchMode.externalApplication),
+                  style: TextButton.styleFrom(padding: EdgeInsets.zero, alignment: Alignment.centerLeft),
+                  child: const Text('How to get your Trading 212 API key'),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 4),
+                  Text(error!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 12, height: 1.5)),
+                ],
+                const SizedBox(height: 12),
+                _Trading212Fields(apiKey: apiKey, apiSecret: apiSecret),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(child: OutlinedButton(onPressed: onCancel, child: const Text('Cancel'))),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: busy ? null : onSubmit,
+                        style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
+                        child: const Text('Save read-only key'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

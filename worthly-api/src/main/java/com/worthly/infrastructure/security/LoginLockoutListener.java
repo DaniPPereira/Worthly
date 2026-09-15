@@ -19,7 +19,6 @@ public class LoginLockoutListener {
 
     static final int MAX_FAILURES = 5;
     static final Duration WINDOW = Duration.ofMinutes(15);
-    static final Duration LOCK = Duration.ofMinutes(15);
 
     private final AppUserRepository users;
     private final AuditService auditService;
@@ -49,10 +48,18 @@ public class LoginLockoutListener {
     public void onFailure(AbstractAuthenticationFailureEvent event) {
         String email = name(event.getAuthentication());
         users.findByEmailIgnoreCase(email).ifPresent(user -> {
+            Instant now = Instant.now();
+            if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(now)) {
+                auditService.record(user.getId(), "LOGIN_FAILURE", Map.of("locked", true));
+                return;
+            }
+            if (user.getLockedUntil() != null && !user.getLockedUntil().isAfter(now)) {
+                user.setFailedLoginCount(0);
+                user.setLockedUntil(null);
+            }
             user.setFailedLoginCount(user.getFailedLoginCount() + 1);
             if (user.getFailedLoginCount() >= MAX_FAILURES) {
-                user.setLockedUntil(Instant.now().plus(LOCK));
-                user.setStatus(OwnerStatus.LOCKED);
+                user.setLockedUntil(now.plus(WINDOW));
             }
             auditService.record(user.getId(), "LOGIN_FAILURE", Map.of("locked", user.getLockedUntil() != null));
         });

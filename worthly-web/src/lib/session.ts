@@ -6,12 +6,21 @@ export const SESSION_COOKIE = "web_session";
 export const CSRF_COOKIE = "worthly_csrf";
 export const OAUTH_FLOW_COOKIE = "oauth_flow";
 
+export const SESSION_IDLE_SECONDS = 30 * 60;
+export const SESSION_ABSOLUTE_MS = 12 * 60 * 60 * 1000;
+
 export type WebSession = {
   accessToken: string;
   refreshToken: string;
   accessExpiresAt: number;
   sessionId: string;
+  issuedAt: number;
 };
+
+export function sessionStillValid(session: WebSession): boolean {
+  const issuedAt = session.issuedAt || 0;
+  return issuedAt > 0 && Date.now() - issuedAt < SESSION_ABSOLUTE_MS;
+}
 
 export type OauthFlow = {
   state: string;
@@ -38,7 +47,7 @@ export const sessionCookieOptions = {
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  maxAge: 60 * 60 * 24 * 14,
+  maxAge: SESSION_IDLE_SECONDS,
 };
 
 export const csrfCookieOptions = {

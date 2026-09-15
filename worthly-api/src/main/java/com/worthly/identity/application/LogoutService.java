@@ -38,9 +38,9 @@ public class LogoutService {
     }
 
     @Transactional
-    public void logout(Jwt jwt, String accessTokenValue) {
+    public void logout(Jwt jwt, String accessTokenValue, String refreshTokenValue) {
         UUID userId = UUID.fromString(jwt.getSubject());
-        OAuth2Authorization authorization = authorizations.findByToken(accessTokenValue, OAuth2TokenType.ACCESS_TOKEN);
+        OAuth2Authorization authorization = findAuthorization(accessTokenValue, refreshTokenValue);
         if (authorization != null) {
             var refresh = authorization.getRefreshToken();
             if (refresh != null && refresh.getToken() != null) {
@@ -59,5 +59,27 @@ public class LogoutService {
             authorizations.remove(authorization);
         }
         auditService.record(userId, "LOGOUT", Map.of());
+    }
+
+    private OAuth2Authorization findAuthorization(String accessTokenValue, String refreshTokenValue) {
+        if (accessTokenValue != null && !accessTokenValue.isBlank()) {
+            OAuth2Authorization byAccess = authorizations.findByToken(accessTokenValue, OAuth2TokenType.ACCESS_TOKEN);
+            if (byAccess != null) {
+                return byAccess;
+            }
+        }
+        if (refreshTokenValue == null || refreshTokenValue.isBlank()) {
+            return null;
+        }
+        try {
+            return authorizations.findByToken(refreshTokenValue, OAuth2TokenType.REFRESH_TOKEN);
+        } catch (RuntimeException ex) {
+            refreshTokens.findByTokenHash(TokenHashes.sha256(refreshTokenValue)).ifPresent(token -> {
+                Instant now = Instant.now();
+                refreshTokens.revokeFamily(token.getFamilyId(), now);
+                devices.findByRefreshFamilyId(token.getFamilyId()).ifPresent(device -> device.setRevokedAt(now));
+            });
+            return null;
+        }
     }
 }

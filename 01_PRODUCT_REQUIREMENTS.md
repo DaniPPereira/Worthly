@@ -27,9 +27,9 @@ distribution, recent movements and connection health.
 -   **FR-002** Each registered user is an isolated tenant. Domain rows
     are scoped by `user_id`.
 -   **FR-003** Public `POST /api/v1/register` creates a user. Duplicate
-    email returns 409 `email_taken`. Password minimum is 14 characters,
-    hashed with Argon2. Registration does not issue tokens; the user
-    then signs in via OAuth.
+    email returns 409 `email_taken`. Password minimum is 8 characters,
+    hashed with Argon2. Registration is public. It does not issue tokens;
+    the user then signs in via OAuth.
 -   **FR-004** Owner can view and revoke active mobile/device sessions.
 -   **FR-005** Web logout invalidates its server session.
 -   **FR-006** Mobile uses Authorization Code + PKCE and refresh-token
@@ -38,6 +38,9 @@ distribution, recent movements and connection health.
 -   **FR-008** Owner can update reporting timezone and reporting currency
     through `PATCH /me`; timezone MUST be a valid IANA ZoneId and currency
     MUST be an uppercase ISO 4217 code.
+-   **FR-009** Owner can delete their account through `DELETE /me` with
+    `confirm=true`. This removes that tenant's financial data from the
+    instance.
 
 ### Connections
 

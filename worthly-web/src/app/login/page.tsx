@@ -11,7 +11,9 @@ export default async function LoginPage({
       ? "Sign-in was cancelled or failed."
       : params.error === "state"
         ? "The sign-in attempt expired. Please try again."
-        : null;
+        : params.error === "token"
+          ? "Sign-in could not be completed. Please try again."
+          : null;
   const registered = params.registered === "1";
 
   return (
@@ -45,6 +47,11 @@ export default async function LoginPage({
         <a href="/register" className="muted" style={{ display: "block", marginTop: 16, fontSize: 13, textAlign: "center" }}>
           Create an account
         </a>
+        <p className="muted" style={{ marginTop: 18, fontSize: 12, textAlign: "center" }}>
+          <a href="/privacy">Privacy</a>
+          {" · "}
+          <a href="/terms">Terms</a>
+        </p>
       </div>
     </main>
   );

@@ -2,20 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { CurrencyTabs, EmptyState } from "@/components/ui/Primitives";
+import { CurrencyTabs, EmptyState, MonthNav } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { useAppData } from "@/lib/app-data";
+import { connectionLabel, useAppData } from "@/lib/app-data";
 import { areaPath, linePath, toChartNumber } from "@/lib/chart";
 import { addAmounts, formatAmount, formatRate, formatSignedAmount } from "@/lib/money";
-import { formatDay, formatMonthLabel, monthDateRange, monthKeyInZone, previousMonthKeys } from "@/lib/period";
+import { formatDay, formatMonthLabel, monthDateRange, monthKeyInZone, monthKeysThrough } from "@/lib/period";
+import { transactionsHref } from "@/lib/transactions-href";
 import type { Account, InvestmentSummary, MonthlyAnalytics, TransactionPage, WealthSummary } from "@/lib/types";
 
 const CAT_COLORS = ["#0E4A3E", "#2C6B5C", "#4A8878", "#C98F32", "#B8BFBC"];
 
-type ExpenseRow = { name: string; amount: string; currency: string };
+type ExpenseRow = { name: string; amount: string; currency: string; categoryId: string };
 
 export function DashboardPage() {
-  const { owner, privacy, connections, notifications, categories } = useAppData();
+  const { owner, privacy, connections, categories } = useAppData();
   const [wealth, setWealth] = useState<WealthSummary | null>(null);
   const [investments, setInvestments] = useState<InvestmentSummary | null>(null);
   const [months, setMonths] = useState<MonthlyAnalytics[]>([]);
@@ -24,50 +25,82 @@ export function DashboardPage() {
   const [expenses, setExpenses] = useState<TransactionPage | null>(null);
   const [currency, setCurrency] = useState<string>(owner.reportingCurrency);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const currentMonth = monthKeyInZone(owner.reportingTimezone);
+  const [month, setMonth] = useState(currentMonth);
 
-  const month = monthKeyInZone(owner.reportingTimezone);
-  const keys = useMemo(() => previousMonthKeys(owner.reportingTimezone, 6), [owner.reportingTimezone]);
+  const keys = useMemo(() => monthKeysThrough(month, 6), [month]);
   const { from, to } = monthDateRange(month);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      apiGet<WealthSummary>("/analytics/summary"),
-      apiGet<InvestmentSummary>("/investments/summary").catch(() => ({ totalsByCurrency: [], observedAt: null })),
-      Promise.all(keys.map((key) => apiGet<MonthlyAnalytics>(`/analytics/monthly?month=${key}`))),
-      apiGet<TransactionPage>("/transactions?size=5"),
-      apiGet<Account[]>("/accounts"),
-      apiGet<TransactionPage>(`/transactions?economicType=EXPENSE&from=${from}&to=${to}&size=200`),
-    ])
-      .then(([nextWealth, nextInvestments, nextMonths, nextRecent, nextAccounts, nextExpenses]) => {
+    void apiGet<WealthSummary>("/analytics/summary")
+      .then((nextWealth) => {
         if (cancelled) {
           return;
         }
         setWealth(nextWealth);
-        setInvestments(nextInvestments);
-        setMonths(nextMonths);
-        setRecent(nextRecent);
-        setAccounts(nextAccounts);
-        setExpenses(nextExpenses);
         const first = nextWealth.totalsByCurrency[0]?.currency ?? owner.reportingCurrency;
-        setCurrency((current) => nextWealth.totalsByCurrency.some((row) => row.currency === current) ? current : first);
+        setCurrency((current) =>
+          nextWealth.totalsByCurrency.some((row) => row.currency === current) ? current : first,
+        );
       })
       .catch(() => {
         if (!cancelled) {
           setLoadError("Dashboard totals are unavailable.");
         }
       });
+    Promise.all([
+      apiGet<InvestmentSummary>("/investments/summary").catch(() => ({ totalsByCurrency: [], observedAt: null })),
+      apiGet<TransactionPage>("/transactions?size=5"),
+      apiGet<Account[]>("/accounts"),
+    ])
+      .then(([nextInvestments, nextRecent, nextAccounts]) => {
+        if (cancelled) {
+          return;
+        }
+        setInvestments(nextInvestments);
+        setRecent(nextRecent);
+        setAccounts(nextAccounts);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadError((current) => current ?? "Dashboard totals are unavailable.");
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, [from, keys, owner.reportingCurrency, to]);
+  }, [owner.reportingCurrency]);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      Promise.all(keys.map((key) => apiGet<MonthlyAnalytics>(`/analytics/monthly?month=${key}`))),
+      apiGet<TransactionPage>(`/transactions?economicType=EXPENSE&from=${from}&to=${to}&size=200`),
+    ])
+      .then(([nextMonths, nextExpenses]) => {
+        if (cancelled) {
+          return;
+        }
+        setMonths(nextMonths);
+        setExpenses(nextExpenses);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoadError((current) => current ?? "Dashboard totals are unavailable.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [from, keys, to]);
 
   const currencies = wealth?.totalsByCurrency.map((row) => row.currency) ?? [];
   const wealthRow = wealth?.totalsByCurrency.find((row) => row.currency === currency);
   const investmentRow = investments?.totalsByCurrency.find((row) => row.currency === currency);
   const brokerageCash = investmentRow?.cash ?? "0.00";
   const cashAvailable = wealthRow ? addAmounts(wealthRow.liquidCash, brokerageCash) : "0.00";
-  const portfolioValue = investmentRow?.portfolioValue ?? wealthRow?.investmentValue ?? "0.00";
+  const portfolioValue = investmentRow?.portfolioValue ?? "0.00";
   const monthlyNow = months.find((item) => item.month === month)?.totalsByCurrency.find((row) => row.currency === currency);
   const savingsSeries = months.map((item) => {
     const row = item.totalsByCurrency.find((entry) => entry.currency === currency);
@@ -83,21 +116,23 @@ export function DashboardPage() {
 
   const categoryRows = useMemo(() => {
     const byId = new Map(categories.map((category) => [category.id, category]));
-    const totals = new Map<string, { name: string; cents: bigint }>();
+    const uncategorizedId = categories.find((item) => item.code === "uncategorized")?.id ?? "uncategorized";
+    const totals = new Map<string, { name: string; categoryId: string; cents: bigint }>();
     for (const tx of expenses?.items ?? []) {
       if (tx.money.currency !== currency) {
         continue;
       }
       const category = tx.categoryId ? byId.get(tx.categoryId) : undefined;
+      const categoryId = tx.categoryId ?? uncategorizedId;
       const name = category?.label ?? "Uncategorized";
       const unsigned = tx.money.amount.startsWith("-") ? tx.money.amount.slice(1) : tx.money.amount;
       const [integer = "0", fraction = ""] = unsigned.split(".");
       const mag = BigInt(integer) * 100n + BigInt((fraction + "00").slice(0, 2));
-      const existing = totals.get(name);
+      const existing = totals.get(categoryId);
       if (existing) {
         existing.cents += mag;
       } else {
-        totals.set(name, { name, cents: mag });
+        totals.set(categoryId, { name, categoryId, cents: mag });
       }
     }
     const rows: ExpenseRow[] = [...totals.values()]
@@ -105,6 +140,7 @@ export function DashboardPage() {
       .slice(0, 5)
       .map((row) => ({
         name: row.name,
+        categoryId: row.categoryId,
         currency,
         amount: `${(row.cents / 100n).toString()}.${(row.cents % 100n).toString().padStart(2, "0")}`,
       }));
@@ -113,9 +149,13 @@ export function DashboardPage() {
 
   const maxCat = categoryRows[0]?.amount ?? "0";
   const liquidAccounts = accounts.filter((account) => account.includedInLiquidCash && account.currency === currency);
-  const reauth = notifications.find((item) => item.readAt == null && item.type === "CONNECTION_REAUTH_REQUIRED");
   const reauthConnection = connections.find((connection) => connection.status === "REAUTH_REQUIRED");
   const hasBank = connections.some((connection) => connection.provider === "ENABLE_BANKING");
+  const connectedBank = connections.find(
+    (connection) =>
+      connection.provider === "ENABLE_BANKING" && (connection.status === "ACTIVE" || connection.status === "ERROR"),
+  );
+  const needsReauth = connections.some((connection) => connection.status === "REAUTH_REQUIRED");
 
   if (loadError) {
     return <EmptyState title="Dashboard unavailable">{loadError}</EmptyState>;
@@ -124,20 +164,47 @@ export function DashboardPage() {
     return <p className="muted">Loading dashboard…</p>;
   }
   if (!wealthRow) {
-    return <EmptyState title="No balances yet">Connect a bank or Trading 212 to see cash and net worth. Totals stay grouped by currency.</EmptyState>;
+    if (needsReauth) {
+      return (
+        <EmptyState title="Bank access needs a refresh">
+          Open{" "}
+          <Link href="/connections" style={{ fontWeight: 600, color: "var(--pine)" }}>
+            Connections
+          </Link>{" "}
+          and reauthorize. Worthly cannot read balances until the bank session is valid again.
+        </EmptyState>
+      );
+    }
+    if (connectedBank) {
+      return (
+        <EmptyState title="Waiting for the first balance sync">
+          {connectedBank.institutionName ?? "Your bank"} is connected, but Worthly has not stored balances yet. Open{" "}
+          <Link href="/connections" style={{ fontWeight: 600, color: "var(--pine)" }}>
+            Connections
+          </Link>{" "}
+          and tap Sync now. If that fails, disconnect and reconnect the bank.
+        </EmptyState>
+      );
+    }
+    return <EmptyState title="No balances yet">Connect a bank to see cash, then Trading 212 for investments. Totals stay grouped by currency and include every connected account.</EmptyState>;
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <CurrencyTabs currencies={currencies} selected={currency} onSelect={setCurrency} />
-      {reauth ? (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <CurrencyTabs currencies={currencies} selected={currency} onSelect={setCurrency} />
+        <div style={{ marginLeft: "auto" }}>
+          <MonthNav month={month} currentMonth={currentMonth} onChange={setMonth} />
+        </div>
+      </div>
+      {reauthConnection ? (
         <div style={{ background: "#FBF3E4", border: "1px solid rgba(138,100,18,.3)", borderRadius: 12, padding: "13px 16px", display: "flex", alignItems: "center", gap: 12 }}>
           <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#8A6412" strokeWidth="1.8" strokeLinecap="round">
             <path d="M12 9v4M12 17h.01" />
             <path d="M10.3 3.9 2.4 17.4A1.9 1.9 0 0 0 4 20.3h16a1.9 1.9 0 0 0 1.6-2.9L13.7 3.9a1.9 1.9 0 0 0-3.4 0z" />
           </svg>
           <div style={{ flex: 1 }}>
-            <span style={{ fontWeight: 600, fontSize: 13 }}>{reauthConnection?.institutionName ?? "A bank"} needs reauthorization.</span>{" "}
+            <span style={{ fontWeight: 600, fontSize: 13 }}>{connectionLabel(reauthConnection)} needs reauthorization.</span>{" "}
             <span style={{ fontSize: 12.5, color: "#6E5A2E" }}>Open Banking consent expired — its balances below may be stale.</span>
           </div>
           <Link href="/connections" className="btn btn-ghost" style={{ height: 32, textDecoration: "none" }}>
@@ -153,9 +220,9 @@ export function DashboardPage() {
             {formatAmount(cashAvailable, currency, privacy)}
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(244,241,234,.62)", marginTop: 8 }}>
-            {liquidAccounts.length} bank account{liquidAccounts.length === 1 ? "" : "s"}
+            {liquidAccounts.length} liquid account{liquidAccounts.length === 1 ? "" : "s"}
             {addAmounts(brokerageCash, "0.00") !== "0.00" ? " · includes Trading 212 cash" : ""}
-            {" · stocks shown under Invested · "}
+            {" · holdings are current · "}
             {currency}
           </div>
           <div style={{ display: "flex", gap: 28, marginTop: "auto", paddingTop: 22, borderTop: "1px solid rgba(244,241,234,.16)" }}>
@@ -166,7 +233,9 @@ export function DashboardPage() {
               </div>
             </div>
             <div>
-              <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>This month</div>
+              <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>
+                {month === currentMonth ? "This month" : formatMonthLabel(month)}
+              </div>
               <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9 }}>
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="#8FD0B4">
                   <path d="M12 5l7 12H5z" />
@@ -177,7 +246,7 @@ export function DashboardPage() {
               </div>
             </div>
             <div>
-              <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>Invested</div>
+              <div className="label" style={{ color: "rgba(244,241,234,.62)" }}>Holdings</div>
               <div className="serif tabular" style={{ fontSize: 27, lineHeight: 1.1, marginTop: 5, color: "#E8C382" }}>
                 {formatAmount(portfolioValue, currency, privacy)}
               </div>
@@ -209,9 +278,9 @@ export function DashboardPage() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
         {[
-          { label: `Income · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.income, currency, privacy) : "—", note: "This reporting month", fg: "var(--gain)", spark: linePath(incomeSeries, 120, 26, 4) },
+          { label: `Income · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.income, currency, privacy) : "—", note: month === currentMonth ? "This reporting month" : formatMonthLabel(month), fg: "var(--gain)", spark: linePath(incomeSeries, 120, 26, 4) },
           { label: `Expenses · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.expenses, currency, privacy) : "—", note: "Transfers excluded", fg: "var(--loss)", spark: linePath(expenseSeries, 120, 26, 4) },
-          { label: `Invested · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.invested, currency, privacy) : "—", note: "Funding, not spending", fg: "var(--brass)", spark: linePath(investedSeries, 120, 26, 4) },
+          { label: `Funded · ${formatMonthLabel(month)}`, value: monthlyNow ? formatAmount(monthlyNow.invested, currency, privacy) : "—", note: "Cash sent to Trading 212 this month", fg: "var(--brass)", spark: linePath(investedSeries, 120, 26, 4) },
           { label: "Savings rate", value: monthlyNow ? formatRate(monthlyNow.savingsRate, privacy) : "—", note: monthlyNow?.savingsRateReason ?? "Income minus expenses", fg: "var(--pine)", spark: linePath(rateSeries, 120, 26, 4) },
         ].map((metric) => (
           <div key={metric.label} className="card" style={{ padding: "16px 18px", borderRadius: 14 }}>
@@ -239,7 +308,11 @@ export function DashboardPage() {
               </p>
             ) : (
               categoryRows.map((row, index) => (
-                <div key={row.name}>
+                <Link
+                  key={row.categoryId}
+                  href={transactionsHref({ from, to, categoryId: row.categoryId, economicType: "EXPENSE" })}
+                  style={{ display: "block", textDecoration: "none", color: "inherit", borderRadius: 8, padding: "2px 0" }}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                     <span style={{ fontWeight: 500, fontSize: 13 }}>{row.name}</span>
                     <span className="mono tabular" style={{ fontSize: 12.5, color: "#3E4A47" }}>
@@ -249,12 +322,12 @@ export function DashboardPage() {
                   <div style={{ height: 6, borderRadius: 3, background: "rgba(19,26,25,.07)", marginTop: 6, overflow: "hidden" }}>
                     <div style={{ height: 6, borderRadius: 3, background: CAT_COLORS[index] ?? "#B8BFBC", width: barWidth(row.amount, maxCat) }} />
                   </div>
-                </div>
+                </Link>
               ))
             )}
           </div>
           <div className="muted" style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(19,26,25,.07)" }}>
-            Internal transfers are excluded from this list. Percent bars are relative to the largest category in {currency}.
+            Click a category to see those expenses. Internal transfers are excluded. Bars are relative to the largest category in {currency}.
           </div>
         </div>
         <div className="card" style={{ padding: "20px 20px 8px" }}>

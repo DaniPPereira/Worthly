@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { formatMonthTitle, shiftMonthKey } from "@/lib/period";
 
 export function CurrencyTabs({
   currencies,
@@ -47,6 +48,57 @@ export function EmptyState({ title, children }: { title: string; children: React
       <p className="muted" style={{ margin: "8px 0 0" }}>
         {children}
       </p>
+    </div>
+  );
+}
+
+export function MonthNav({
+  month,
+  currentMonth,
+  onChange,
+}: {
+  month: string;
+  currentMonth: string;
+  onChange: (monthKey: string) => void;
+}) {
+  const atLatest = month >= currentMonth;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        background: "#fff",
+        border: "1px solid rgba(19,26,25,.11)",
+        borderRadius: 10,
+        padding: "4px 8px",
+      }}
+    >
+      <button
+        type="button"
+        className="btn btn-ghost"
+        style={{ height: 32, width: 32, padding: 0, border: "none" }}
+        aria-label="Previous month"
+        onClick={() => onChange(shiftMonthKey(month, -1))}
+      >
+        ‹
+      </button>
+      <span style={{ minWidth: 148, textAlign: "center", fontWeight: 600, fontSize: 13.5 }}>{formatMonthTitle(month)}</span>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        style={{ height: 32, width: 32, padding: 0, border: "none", opacity: atLatest ? 0.35 : 1 }}
+        aria-label="Next month"
+        disabled={atLatest}
+        onClick={() => onChange(shiftMonthKey(month, 1))}
+      >
+        ›
+      </button>
+      {month !== currentMonth ? (
+        <button type="button" className="btn btn-ghost" style={{ height: 32 }} onClick={() => onChange(currentMonth)}>
+          This month
+        </button>
+      ) : null}
     </div>
   );
 }

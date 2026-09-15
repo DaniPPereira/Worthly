@@ -39,11 +39,13 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -64,7 +66,9 @@ public class SecurityConfig {
                 .cors(corsConfigurer -> corsConfigurer.configurationSource(cors))
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
                         new LoginUrlAuthenticationEntryPoint("/login"),
-                        new MediaTypeRequestMatcher(MediaType.TEXT_HTML)));
+                        new MediaTypeRequestMatcher(MediaType.TEXT_HTML)))
+                .headers(headers -> headers.httpStrictTransportSecurity(
+                        hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000)));
         return http.build();
     }
 
@@ -83,6 +87,7 @@ public class SecurityConfig {
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> jwt.decoder(jwtDecoder)))
                 .cors(c -> c.configurationSource(cors))
                 .headers(headers -> headers
+                        .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
                         .contentTypeOptions(Customizer.withDefaults())
                         .frameOptions(frame -> frame.deny())
                         .referrerPolicy(referrer -> referrer.policy(
@@ -99,6 +104,7 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth.requestMatchers(
                                 "/",
                                 "/login",
+                                "/logout",
                                 "/register",
                                 "/error",
                                 "/actuator/health",
@@ -111,8 +117,15 @@ public class SecurityConfig {
                 .formLogin(form -> form.loginPage("/login")
                         .defaultSuccessUrl(webAppOrigin(properties), false)
                         .permitAll())
+                .logout(logout -> logout.logoutRequestMatcher(
+                                PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/logout"))
+                        .logoutSuccessUrl(webAppOrigin(properties) + "login?signedout=1")
+                        .invalidateHttpSession(true)
+                        .clearAuthentication(true)
+                        .deleteCookies("JSESSIONID"))
                 .cors(c -> c.configurationSource(cors))
                 .headers(headers -> headers
+                        .httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000))
                         .contentTypeOptions(Customizer.withDefaults())
                         .frameOptions(frame -> frame.deny())
                         .referrerPolicy(referrer -> referrer.policy(

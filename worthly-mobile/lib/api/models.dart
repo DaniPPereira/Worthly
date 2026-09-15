@@ -41,6 +41,7 @@ class Connection {
     this.institutionCountry,
     this.lastSuccessfulSyncAt,
     this.consentExpiresAt,
+    this.lastErrorCode,
   });
 
   final String id;
@@ -50,6 +51,7 @@ class Connection {
   final String? institutionCountry;
   final String? lastSuccessfulSyncAt;
   final String? consentExpiresAt;
+  final String? lastErrorCode;
 
   String get label => provider == 'TRADING_212' ? 'Trading 212' : (institutionName ?? provider);
 
@@ -62,6 +64,7 @@ class Connection {
       institutionCountry: json['institutionCountry'] as String?,
       lastSuccessfulSyncAt: json['lastSuccessfulSyncAt'] as String?,
       consentExpiresAt: json['consentExpiresAt'] as String?,
+      lastErrorCode: json['lastErrorCode'] as String?,
     );
   }
 }
@@ -219,14 +222,60 @@ class TxPage {
 }
 
 class Category {
-  const Category({required this.id, this.code, required this.label});
+  const Category({
+    required this.id,
+    this.code,
+    required this.label,
+    this.parentId,
+    this.system = false,
+  });
 
   final String id;
   final String? code;
   final String label;
+  final String? parentId;
+  final bool system;
 
   factory Category.fromJson(Map<String, dynamic> json) {
-    return Category(id: json['id'] as String, code: json['code'] as String?, label: json['label'] as String);
+    return Category(
+      id: json['id'] as String,
+      code: json['code'] as String?,
+      label: json['label'] as String,
+      parentId: json['parentId'] as String?,
+      system: json['system'] as bool? ?? false,
+    );
+  }
+}
+
+class CategorizationRule {
+  const CategorizationRule({
+    required this.id,
+    required this.priority,
+    required this.field,
+    required this.operator,
+    required this.matchValue,
+    required this.targetCategoryId,
+    this.enabled = true,
+  });
+
+  final String id;
+  final int priority;
+  final String field;
+  final String operator;
+  final String matchValue;
+  final String targetCategoryId;
+  final bool enabled;
+
+  factory CategorizationRule.fromJson(Map<String, dynamic> json) {
+    return CategorizationRule(
+      id: json['id'] as String,
+      priority: (json['priority'] as num?)?.toInt() ?? 0,
+      field: json['field'] as String,
+      operator: json['operator'] as String,
+      matchValue: json['matchValue'] as String,
+      targetCategoryId: json['targetCategoryId'] as String,
+      enabled: json['enabled'] as bool? ?? true,
+    );
   }
 }
 

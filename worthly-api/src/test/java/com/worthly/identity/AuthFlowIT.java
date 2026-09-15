@@ -39,6 +39,13 @@ class AuthFlowIT extends AbstractIntegrationTest {
     ObjectMapper objectMapper;
 
     @Test
+    void apiLogoutClearsServletSessionAndReturnsToWebLogin() throws Exception {
+        mockMvc.perform(get("/logout"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("http://localhost:3000/login?signedout=1"));
+    }
+
+    @Test
     void successfulLoginWithoutSavedRequestRedirectsToWebOrigin() throws Exception {
         mockMvc.perform(post("/login")
                         .param("username", OWNER_EMAIL)
@@ -74,6 +81,9 @@ class AuthFlowIT extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/v1/me/logout").header("Authorization", "Bearer " + tokens.access()))
                 .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + tokens.access()))
+                .andExpect(status().isUnauthorized());
 
         mockMvc.perform(post("/oauth2/token")
                         .header("Authorization", basicWeb())

@@ -26,7 +26,7 @@ public class OwnerUserDetailsService implements UserDetailsService {
         AppUserEntity user = users.findByEmailIgnoreCase(username)
                 .orElseThrow(() -> new UsernameNotFoundException("not found"));
         boolean locked = user.getLockedUntil() != null && user.getLockedUntil().isAfter(Instant.now());
-        boolean enabled = user.getStatus() == OwnerStatus.ACTIVE && !locked;
+        boolean enabled = user.getStatus() == OwnerStatus.ACTIVE || (user.getStatus() == OwnerStatus.LOCKED && !locked);
         return User.withUsername(user.getEmail())
                 .password(user.getPasswordHash())
                 .authorities(List.of(new SimpleGrantedAuthority("ROLE_OWNER")))

@@ -5,6 +5,7 @@ import com.worthly.identity.adapter.out.persistence.AppUserEntity;
 import com.worthly.identity.adapter.out.persistence.AppUserRepository;
 import com.worthly.identity.domain.Owner;
 import com.worthly.identity.domain.OwnerStatus;
+import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.shared.web.ApiException;
 import java.util.Locale;
 import java.util.Map;
@@ -23,16 +24,23 @@ public class RegistrationService {
     private final AppUserRepository users;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
+    private final WorthlyProperties properties;
 
     public RegistrationService(
-            AppUserRepository users, PasswordEncoder passwordEncoder, AuditService auditService) {
+            AppUserRepository users,
+            PasswordEncoder passwordEncoder,
+            AuditService auditService,
+            WorthlyProperties properties) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.auditService = auditService;
+        this.properties = properties;
     }
 
     @Transactional
-    public Owner register(String email, String password, String reportingTimezone, String reportingCurrency) {
+    public Owner register(
+            String email, String password, String reportingTimezone, String reportingCurrency, String invite) {
+        assertInvite(invite);
         String normalizedEmail = normalizeEmail(email);
         if (password == null || password.length() < OwnerBootstrapRunner.MIN_PASSWORD_LENGTH) {
             throw ApiException.of(HttpStatus.BAD_REQUEST, "password_too_short");
@@ -77,5 +85,15 @@ public class RegistrationService {
     private static String domainOf(String email) {
         int at = email.indexOf('@');
         return at < 0 ? "unknown" : email.substring(at + 1);
+    }
+
+    private void assertInvite(String invite) {
+        if (!properties.getRegistration().isInviteRequired()) {
+            return;
+        }
+        String expected = properties.getRegistration().getInviteCode().strip();
+        if (invite == null || !expected.equals(invite.strip())) {
+            throw ApiException.of(HttpStatus.FORBIDDEN, "invite_required");
+        }
     }
 }

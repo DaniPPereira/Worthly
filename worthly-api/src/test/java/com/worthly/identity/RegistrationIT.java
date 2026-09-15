@@ -54,7 +54,7 @@ class RegistrationIT extends AbstractIntegrationTest {
 
         mockMvc.perform(post("/api/v1/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"email\":\"short@worthly.test\",\"password\":\"too-short\"}"))
+                        .content("{\"email\":\"short@worthly.test\",\"password\":\"short\"}"))
                 .andExpect(status().isBadRequest());
     }
 }

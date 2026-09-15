@@ -53,6 +53,36 @@ class Period {
     return names[month - 1];
   }
 
+  static String monthTitle(String monthKey) {
+    const names = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    final year = monthKey.substring(0, 4);
+    final month = int.parse(monthKey.substring(5, 7));
+    return '${names[month - 1]} $year';
+  }
+
+  static List<String> monthsThrough(String endMonthKey, int count) {
+    var key = endMonthKey;
+    final keys = <String>[];
+    for (var i = 0; i < count; i++) {
+      keys.insert(0, key);
+      key = shiftMonthKey(key, -1);
+    }
+    return keys;
+  }
+
   static String instant(String? iso, String timeZone) {
     if (iso == null || iso.isEmpty) {
       return 'Never';

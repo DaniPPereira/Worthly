@@ -92,6 +92,16 @@ class EnableBankingIT extends AbstractIntegrationTest {
         String connectionId =
                 UriComponentsBuilder.fromUriString(location).build().getQueryParams().getFirst("connectionId");
 
+        MvcResult wealthAfterConnect = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/analytics/summary")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode totalsAfterConnect =
+                objectMapper.readTree(wealthAfterConnect.getResponse().getContentAsString()).get("totalsByCurrency");
+        assertThat(totalsAfterConnect).hasSize(1);
+        assertThat(totalsAfterConnect.get(0).get("currency").asText()).isEqualTo("EUR");
+        assertThat(totalsAfterConnect.get(0).get("liquidCash").asText()).isEqualTo("90.00");
+
         mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/connections/enable-banking/callback")
                         .param("code", "test-code")
                         .param("state", state))
@@ -105,6 +115,9 @@ class EnableBankingIT extends AbstractIntegrationTest {
         assertThat(first.get("status").asText()).isEqualTo("SUCCEEDED");
         int imported = first.get("importedCount").asInt();
         assertThat(imported).isGreaterThanOrEqualTo(3);
+        ENABLE_BANKING.verify(WireMock.getRequestedFor(urlPathEqualTo("/accounts/acc-uid-1/transactions"))
+                .withQueryParam("strategy", equalTo("longest"))
+                .withQueryParam("date_from", absent()));
 
         MvcResult secondSync = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/" + connectionId + "/sync")
                         .header("Authorization", "Bearer " + token))
@@ -194,6 +207,55 @@ class EnableBankingIT extends AbstractIntegrationTest {
         assertThat(afterList).hasSize(1);
         assertThat(afterList.get(0).get("id").asText()).isEqualTo(originalId);
         assertThat(firstCallback.getResponse().getHeader("Location")).contains("connectionId=");
+    }
+
+    @Test
+    void syncSkipsSessionAccountsWithoutUid() throws Exception {
+        String token = OwnerAuthClient.accessToken(mockMvc, objectMapper);
+        String state = startAuthorization(token);
+        MvcResult callback = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/connections/enable-banking/callback")
+                        .param("code", "test-code")
+                        .param("state", state))
+                .andExpect(status().isFound())
+                .andReturn();
+        String connectionId = UriComponentsBuilder.fromUriString(callback.getResponse().getHeader("Location"))
+                .build()
+                .getQueryParams()
+                .getFirst("connectionId");
+
+        ENABLE_BANKING.stubFor(WireMock.get(urlPathEqualTo("/sessions/sess-1"))
+                .willReturn(okJson(
+                        """
+                        {"session_id":"sess-1","status":"AUTHORIZED","access":{"valid_until":"2027-01-01T00:00:00Z"},
+                         "accounts":[
+                           {"uid":"acc-uid-1","identification_hash":"hash-stable-001","currency":"EUR",
+                            "name":"Main current","cash_account_type":"CACC",
+                            "account_id":{"iban":"PT50000201231234567890154"}},
+                           {},
+                           "acc-uid-1"
+                         ]}
+                        """)));
+
+        MvcResult sync = mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/" + connectionId + "/sync")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isAccepted())
+                .andReturn();
+        JsonNode body = objectMapper.readTree(sync.getResponse().getContentAsString());
+        assertThat(body.get("status").asText()).isEqualTo("SUCCEEDED");
+
+        MvcResult accounts = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/accounts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode accountList = objectMapper.readTree(accounts.getResponse().getContentAsString());
+        assertThat(accountList).hasSize(1);
+        assertThat(accountList.get(0).get("displayName").asText()).isEqualTo("Main current");
+        assertThat(accountList.get(0).get("type").asText()).isEqualTo("CURRENT");
+
+        MvcResult transactions = mockMvc.perform(MockMvcRequestBuilders.get("/api/v1/transactions").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        assertThat(objectMapper.readTree(transactions.getResponse().getContentAsString()).get("total").asLong())
+                .isEqualTo(3);
     }
 
     @Test

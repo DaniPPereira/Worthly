@@ -8,6 +8,8 @@ import 'package:worthly_mobile/api/worthly_client.dart';
 import 'package:worthly_mobile/features/session/session.dart';
 import 'package:worthly_mobile/features/session/shell_data.dart';
 import 'package:worthly_mobile/theme/colors.dart';
+import 'package:worthly_mobile/theme/categories.dart';
+import 'package:worthly_mobile/theme/merchant_rule.dart';
 import 'package:worthly_mobile/theme/money.dart';
 import 'package:worthly_mobile/theme/period.dart';
 import 'package:worthly_mobile/theme/theme.dart';
@@ -32,6 +34,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   Timer? _timer;
   String? _exportError;
   bool _exporting = false;
+  String? _categoryId;
+  String? _categoryLabel;
 
   @override
   void initState() {
@@ -62,7 +66,9 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       return;
     }
     final uncategorized = ref.read(shellDataProvider).asData?.value.categories.where((item) => item.code == 'uncategorized').firstOrNull?.id;
-    final extra = switch (_filter) {
+    final extra = _categoryId != null
+        ? '&categoryId=$_categoryId&economicType=EXPENSE'
+        : switch (_filter) {
       'Expenses' => '&economicType=EXPENSE',
       'Income' => '&economicType=INCOME',
       'Transfers' => '&economicType=INTERNAL_TRANSFER',
@@ -72,7 +78,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     final q = _debounced.isEmpty ? '' : '&q=${Uri.encodeQueryComponent(_debounced)}';
     try {
       final page = await ref.read(worthlyClientProvider).get(
-        '/transactions?from=$_from&to=$_to&size=50$extra$q',
+        '/transactions?from=$_from&to=$_to&size=${_categoryId == null ? 50 : 200}$extra$q',
         parseTxPage,
       );
       if (mounted) {
@@ -134,6 +140,23 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(transactionFocusProvider, (previous, next) {
+      if (next == null) {
+        return;
+      }
+      setState(() {
+        _categoryId = next.categoryId;
+        _categoryLabel = next.label;
+        if (next.from != null) {
+          _from = next.from!;
+        }
+        if (next.to != null) {
+          _to = next.to!;
+        }
+        _filter = next.label == 'Uncategorized' ? 'Uncategorized' : 'All';
+      });
+      _load();
+    });
     final owner = ref.watch(sessionProvider).owner;
     final privacy = ref.watch(privacyProvider);
     final shell = ref.watch(shellDataProvider).asData?.value;
@@ -219,10 +242,21 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
             ],
             const SizedBox(height: 12),
             FilterChipBar(
-              labels: _filters,
-              selected: _filter,
+              labels: [
+                ..._filters,
+                if (_categoryLabel != null && !_filters.contains(_categoryLabel)) _categoryLabel!,
+              ],
+              selected: _categoryLabel != null && !_filters.contains(_categoryLabel)
+                  ? _categoryLabel!
+                  : _filter,
               onSelect: (value) {
-                setState(() => _filter = value);
+                setState(() {
+                  _filter = value;
+                  if (_filters.contains(value)) {
+                    _categoryId = null;
+                    _categoryLabel = null;
+                  }
+                });
                 _load();
               },
             ),
@@ -288,6 +322,15 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                     total: _page!.total,
                   );
                 }
+              });
+            },
+            onRulesApplied: () {
+              _load().then((_) {
+                if (!mounted || _open == null) {
+                  return;
+                }
+                final refreshed = _page?.items.where((item) => item.id == _open!.id).firstOrNull;
+                setState(() => _open = refreshed ?? _open);
               });
             },
           ),
@@ -431,6 +474,7 @@ class TransactionSheet extends ConsumerStatefulWidget {
     required this.privacy,
     required this.onClose,
     required this.onChanged,
+    required this.onRulesApplied,
   });
 
   final Tx tx;
@@ -440,6 +484,7 @@ class TransactionSheet extends ConsumerStatefulWidget {
   final bool privacy;
   final VoidCallback onClose;
   final ValueChanged<Tx> onChanged;
+  final VoidCallback onRulesApplied;
 
   @override
   ConsumerState<TransactionSheet> createState() => _TransactionSheetState();
@@ -448,13 +493,17 @@ class TransactionSheet extends ConsumerStatefulWidget {
 class _TransactionSheetState extends ConsumerState<TransactionSheet> {
   late final TextEditingController _notes;
   List<TransferMatch> _suggestions = [];
+  List<CategorizationRule> _rules = [];
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     _notes = TextEditingController(text: widget.tx.notes ?? '');
-    Future.microtask(_loadSuggestions);
+    Future.microtask(() async {
+      await _loadSuggestions();
+      await _loadRules();
+    });
   }
 
   @override
@@ -486,8 +535,22 @@ class _TransactionSheetState extends ConsumerState<TransactionSheet> {
     }
   }
 
-  Future<void> _patch({String? categoryId, String? notes}) async {
+  Future<void> _loadRules() async {
+    try {
+      final rules = await ref.read(worthlyClientProvider).get('/categorization-rules', parseCategorizationRules);
+      if (mounted) {
+        setState(() => _rules = rules);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _rules = []);
+      }
+    }
+  }
+
+  Future<void> _patch({String? categoryId, String? notes, bool offerRule = true}) async {
     setState(() => _saving = true);
+    final previousCategoryId = widget.tx.categoryId;
     try {
       final next = await ref.read(worthlyClientProvider).send(
         'PATCH',
@@ -497,6 +560,9 @@ class _TransactionSheetState extends ConsumerState<TransactionSheet> {
       );
       if (next != null) {
         widget.onChanged(next);
+        if (categoryId != null && offerRule) {
+          await _offerMerchantRule(next, categoryId, previousCategoryId);
+        }
       }
     } finally {
       if (mounted) {
@@ -505,9 +571,133 @@ class _TransactionSheetState extends ConsumerState<TransactionSheet> {
     }
   }
 
+  Future<void> _offerMerchantRule(Tx next, String categoryId, String? previousCategoryId, {Category? known}) async {
+    final category = known ?? widget.categories.where((item) => item.id == categoryId).firstOrNull;
+    final hint = merchantRuleSuggestion(
+      merchant: next.merchant,
+      description: next.description,
+      categoryCode: category?.code,
+      previousCategoryId: previousCategoryId,
+      nextCategoryId: categoryId,
+      rules: _rules,
+    );
+    if (hint == null || category == null || !mounted) {
+      return;
+    }
+    final title = hint.field == 'DESCRIPTION'
+        ? 'Always categorize descriptions containing “${hint.display}” as ${category.label}?'
+        : hint.operator == 'EQUALS'
+            ? 'Always categorize “${hint.display}” as ${category.label}?'
+            : 'Always categorize merchants containing “${hint.display}” as ${category.label}?';
+    final always = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(
+          'Future and other non-manual transactions matching this ${hint.field == 'DESCRIPTION' ? 'description' : 'merchant'} get this category. This row stays a manual choice.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Only this one')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
+            child: const Text('Always'),
+          ),
+        ],
+      ),
+    );
+    if (always != true || !mounted) {
+      return;
+    }
+    await ref.read(worthlyClientProvider).send(
+      'POST',
+      '/categorization-rules',
+      body: {
+        'priority': 0,
+        'field': hint.field,
+        'operator': hint.operator,
+        'matchValue': hint.matchValue,
+        'targetCategoryId': category.id,
+      },
+      parse: parseCategorizationRule,
+    );
+    await _loadRules();
+    widget.onRulesApplied();
+  }
+
+  Future<void> _createCategory() async {
+    final parents = parentCategories(widget.categories);
+    if (parents.isEmpty || !mounted) {
+      return;
+    }
+    var parentId = defaultParentId(widget.categories);
+    final labelController = TextEditingController();
+    final created = await showDialog<Category>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('New category'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: labelController,
+                autofocus: true,
+                maxLength: 80,
+                decoration: const InputDecoration(labelText: 'Name', hintText: 'Pets'),
+              ),
+              DropdownButton<String>(
+                isExpanded: true,
+                value: parentId,
+                items: parents.map((item) => DropdownMenuItem(value: item.id, child: Text('Under ${item.label}'))).toList(),
+                onChanged: (value) {
+                  if (value != null) {
+                    setDialogState(() => parentId = value);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+            FilledButton(
+              onPressed: () async {
+                final label = labelController.text.trim();
+                if (label.isEmpty) {
+                  return;
+                }
+                final category = await ref.read(worthlyClientProvider).send(
+                  'POST',
+                  '/categories',
+                  body: {'label': label, 'parentId': parentId},
+                  parse: parseCategory,
+                );
+                if (context.mounted) {
+                  Navigator.pop(context, category);
+                }
+              },
+              style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
+              child: const Text('Create and use'),
+            ),
+          ],
+        ),
+      ),
+    );
+    labelController.dispose();
+    if (created == null || !mounted) {
+      return;
+    }
+    final previous = widget.tx.categoryId;
+    ref.invalidate(shellDataProvider);
+    await _patch(categoryId: created.id, offerRule: false);
+    await _offerMerchantRule(widget.tx, created.id, previous, known: created);
+  }
+
   List<Category> get _chips {
     const preferred = ['Groceries', 'Housing', 'Transport', 'Dining', 'Investing', 'Income', 'Uncategorized'];
-    final ordered = <Category>[];
+    final ordered = <Category>[
+      ...customCategories(widget.categories),
+    ];
     for (final label in preferred) {
       final found = widget.categories.where((item) => item.label == label || item.label.toLowerCase().contains(label.toLowerCase())).firstOrNull;
       if (found != null && ordered.every((item) => item.id != found.id)) {
@@ -515,7 +705,7 @@ class _TransactionSheetState extends ConsumerState<TransactionSheet> {
       }
     }
     for (final item in widget.categories) {
-      if (ordered.length >= 8) {
+      if (ordered.length >= 10) {
         break;
       }
       if (ordered.every((existing) => existing.id != item.id)) {
@@ -599,7 +789,28 @@ class _TransactionSheetState extends ConsumerState<TransactionSheet> {
                     ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
+              DropdownButton<String>(
+                isExpanded: true,
+                value: widget.categories.any((item) => item.id == tx.categoryId) ? tx.categoryId : null,
+                hint: const Text('All categories'),
+                items: widget.categories.map((item) => DropdownMenuItem(value: item.id, child: Text(item.label))).toList(),
+                onChanged: _saving
+                    ? null
+                    : (id) {
+                        if (id != null) {
+                          _patch(categoryId: id);
+                        }
+                      },
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton(
+                  onPressed: _saving ? null : _createCategory,
+                  child: const Text('New category'),
+                ),
+              ),
+              const SizedBox(height: 4),
               WorthlyCard(
                 padding: const EdgeInsets.all(14),
                 child: Column(

@@ -50,6 +50,7 @@ class AuthRepository {
       'scope': _scopes,
       'code_challenge': pair.challenge,
       'code_challenge_method': 'S256',
+      'prompt': 'login',
       'state': _pendingState!,
     };
     final encoded = query.entries
@@ -149,14 +150,22 @@ class AuthRepository {
 
   Future<void> logout() async {
     final token = _accessToken;
-    if (token != null) {
-      await _http.post(
-        Uri.parse('${_config.apiUrl}/api/v1/me/logout'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+    final refresh = await _storage.read(key: _refreshKey);
+    try {
+      if (token != null) {
+        await _http.post(
+          Uri.parse('${_config.apiUrl}/api/v1/me/logout'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({'refreshToken': refresh}),
+        );
+      }
+    } finally {
+      _accessToken = null;
+      _accessExpiresAt = null;
+      await _storage.delete(key: _refreshKey);
     }
-    _accessToken = null;
-    _accessExpiresAt = null;
-    await _storage.delete(key: _refreshKey);
   }
 }

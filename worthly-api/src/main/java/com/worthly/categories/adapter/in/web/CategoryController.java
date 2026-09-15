@@ -50,6 +50,22 @@ public class CategoryController {
                 admin.createCategory(UUID.fromString(jwt.getSubject()), request.label(), request.parentId()));
     }
 
+    @PatchMapping("/categories/{categoryId}")
+    public CategoryResponse update(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID categoryId,
+            @Valid @RequestBody CategoryPatchRequest request) {
+        return CategoryResponse.from(
+                admin.updateCategory(
+                        UUID.fromString(jwt.getSubject()), categoryId, request.label(), request.parentId()));
+    }
+
+    @DeleteMapping("/categories/{categoryId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID categoryId) {
+        admin.deleteCategory(UUID.fromString(jwt.getSubject()), categoryId);
+    }
+
     @GetMapping("/categorization-rules")
     public List<RuleResponse> listRules(@AuthenticationPrincipal Jwt jwt) {
         return admin.listRules(UUID.fromString(jwt.getSubject())).stream().map(RuleResponse::from).toList();
@@ -126,6 +142,8 @@ public class CategoryController {
     }
 
     public record CategoryCreateRequest(@NotBlank @Size(max = 80) String label, UUID parentId) {}
+
+    public record CategoryPatchRequest(@Size(max = 80) String label, UUID parentId) {}
 
     public record RuleResponse(
             UUID id,

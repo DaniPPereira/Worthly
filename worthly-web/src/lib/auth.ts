@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { CSRF_COOKIE, decryptPayload, encryptPayload, OAUTH_FLOW_COOKIE, SESSION_COOKIE, type OauthFlow, type WebSession } from "./session";
 import { config } from "./config";
 import { encodeQuery } from "./pkce";
+import { oauthBasicAuthorization } from "./oauth-basic";
 
 export async function readSession(): Promise<WebSession | null> {
   const jar = await cookies();
@@ -66,7 +67,7 @@ export async function exchangeCode(code: string, verifier: string): Promise<WebS
 
 let refreshInFlight: { token: string; promise: Promise<WebSession> } | null = null;
 
-export async function refreshTokens(refreshToken: string): Promise<WebSession> {
+export async function refreshTokens(refreshToken: string, issuedAt?: number): Promise<WebSession> {
   if (refreshInFlight && refreshInFlight.token === refreshToken) {
     return refreshInFlight.promise;
   }
@@ -74,7 +75,7 @@ export async function refreshTokens(refreshToken: string): Promise<WebSession> {
     grant_type: "refresh_token",
     refresh_token: refreshToken,
   });
-  const promise = requestTokens(body).finally(() => {
+  const promise = requestTokens(body, issuedAt).finally(() => {
     if (refreshInFlight?.promise === promise) {
       refreshInFlight = null;
     }
@@ -83,12 +84,11 @@ export async function refreshTokens(refreshToken: string): Promise<WebSession> {
   return promise;
 }
 
-async function requestTokens(body: URLSearchParams): Promise<WebSession> {
-  const credentials = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString("base64");
+async function requestTokens(body: URLSearchParams, issuedAt = Date.now()): Promise<WebSession> {
   const response = await fetch(tokenUrl(), {
     method: "POST",
     headers: {
-      Authorization: `Basic ${credentials}`,
+      Authorization: oauthBasicAuthorization(config.clientId, config.clientSecret),
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
@@ -110,6 +110,7 @@ async function requestTokens(body: URLSearchParams): Promise<WebSession> {
     refreshToken: json.refresh_token,
     accessExpiresAt: Date.now() + json.expires_in * 1000,
     sessionId: crypto.randomUUID(),
+    issuedAt,
   };
 }
 

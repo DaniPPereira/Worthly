@@ -134,6 +134,10 @@ button {
   line-height: 1.55;
 }
 
+.settings-row:hover {
+  background: #fbf9f5;
+}
+
 .password-field {
   position: relative;
   margin-top: 6px;

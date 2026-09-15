@@ -23,7 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Order(0)
 public class OwnerBootstrapRunner implements ApplicationRunner {
 
-    public static final int MIN_PASSWORD_LENGTH = 14;
+    public static final int MIN_PASSWORD_LENGTH = 8;
 
     private static final Logger log = LoggerFactory.getLogger(OwnerBootstrapRunner.class);
 
@@ -58,7 +58,7 @@ public class OwnerBootstrapRunner implements ApplicationRunner {
         }
         String password = readPassword(Path.of(passwordFile));
         if (password.length() < MIN_PASSWORD_LENGTH) {
-            throw new IllegalStateException("Bootstrap password is shorter than 14 characters");
+            throw new IllegalStateException("Bootstrap password is shorter than " + MIN_PASSWORD_LENGTH + " characters");
         }
         AppUserEntity owner = new AppUserEntity();
         owner.setEmail(email.trim().toLowerCase());

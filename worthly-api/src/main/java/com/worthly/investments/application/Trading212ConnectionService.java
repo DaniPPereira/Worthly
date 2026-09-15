@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.worthly.audit.application.AuditService;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionEntity;
 import com.worthly.connections.adapter.out.persistence.ProviderConnectionRepository;
+import com.worthly.connections.application.ConnectionEstablishedEvent;
 import com.worthly.infrastructure.config.WorthlyProperties;
 import com.worthly.infrastructure.crypto.PayloadCrypto;
 import com.worthly.notifications.application.NotificationService;
@@ -17,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,7 @@ public class Trading212ConnectionService {
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
     private final WorthlyProperties properties;
+    private final ApplicationEventPublisher events;
 
     public Trading212ConnectionService(
             ProviderConnectionRepository connections,
@@ -43,7 +46,8 @@ public class Trading212ConnectionService {
             PayloadCrypto crypto,
             ObjectMapper objectMapper,
             AuditService auditService,
-            WorthlyProperties properties) {
+            WorthlyProperties properties,
+            ApplicationEventPublisher events) {
         this.connections = connections;
         this.gateway = gateway;
         this.notifications = notifications;
@@ -51,6 +55,7 @@ public class Trading212ConnectionService {
         this.objectMapper = objectMapper;
         this.auditService = auditService;
         this.properties = properties;
+        this.events = events;
     }
 
     @Transactional
@@ -76,6 +81,7 @@ public class Trading212ConnectionService {
                 ProviderConnectionEntity saved = connections.save(connection);
                 auditService.record(
                         userId, "TRADING_212_CONNECTED", Map.of("status", saved.getStatus(), "environment", environmentOf(base)));
+                events.publishEvent(new ConnectionEstablishedEvent(userId, saved.getId()));
                 return saved;
             } catch (Trading212Gateway.ProviderException ex) {
                 last = ex;

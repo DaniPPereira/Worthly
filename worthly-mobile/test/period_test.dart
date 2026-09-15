@@ -20,6 +20,11 @@ void main() {
     expect(Period.shiftMonthKey('2026-09', 0), '2026-09');
   });
 
+  test('monthsThrough ends at the selected month', () {
+    expect(Period.monthsThrough('2026-03', 4), ['2025-12', '2026-01', '2026-02', '2026-03']);
+    expect(Period.monthTitle('2026-09'), 'September 2026');
+  });
+
   test('ymd round-trips a calendar date', () {
     expect(Period.ymd(Period.parseYmd('2026-09-14')), '2026-09-14');
   });

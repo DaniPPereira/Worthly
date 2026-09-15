@@ -18,6 +18,8 @@ public class WorthlyProperties {
     private final EnableBanking enableBanking = new EnableBanking();
     private final Trading212 trading212 = new Trading212();
     private final Crypto crypto = new Crypto();
+    private final Sync sync = new Sync();
+    private final Registration registration = new Registration();
 
     public String getIssuer() {
         return issuer;
@@ -53,6 +55,14 @@ public class WorthlyProperties {
 
     public Crypto getCrypto() {
         return crypto;
+    }
+
+    public Sync getSync() {
+        return sync;
+    }
+
+    public Registration getRegistration() {
+        return registration;
     }
 
     public static class Bootstrap {
@@ -457,6 +467,34 @@ public class WorthlyProperties {
 
         public void setGenerateEphemeralDataKey(boolean generateEphemeralDataKey) {
             this.generateEphemeralDataKey = generateEphemeralDataKey;
+        }
+    }
+
+    public static class Sync {
+        private boolean autoOnConnect = true;
+
+        public boolean isAutoOnConnect() {
+            return autoOnConnect;
+        }
+
+        public void setAutoOnConnect(boolean autoOnConnect) {
+            this.autoOnConnect = autoOnConnect;
+        }
+    }
+
+    public static class Registration {
+        private String inviteCode = "";
+
+        public String getInviteCode() {
+            return inviteCode;
+        }
+
+        public void setInviteCode(String inviteCode) {
+            this.inviteCode = inviteCode == null ? "" : inviteCode;
+        }
+
+        public boolean isInviteRequired() {
+            return inviteCode != null && !inviteCode.isBlank();
         }
     }
 }

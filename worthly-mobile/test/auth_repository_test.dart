@@ -42,6 +42,7 @@ void main() {
     );
     final url = auth.startLogin();
     expect(url.queryParameters['code_challenge_method'], 'S256');
+    expect(url.queryParameters['prompt'], 'login');
     expect(url.queryParameters.containsKey('client_secret'), isFalse);
 
     await auth.completeLogin(
@@ -62,5 +63,36 @@ void main() {
     final me = MeRepository(auth: auth, config: AuthConfig.local, httpClient: meClient);
     final owner = await me.current();
     expect(owner?.email, 'owner@worthly.test');
+  });
+
+  test('logout deletes refresh material even if the API call fails', () async {
+    final storage = MemoryStorage();
+    final authClient = MockClient((request) async {
+      if (request.url.path == '/oauth2/token') {
+        return http.Response(
+          '{"access_token":"access-1","refresh_token":"refresh-1","expires_in":600}',
+          200,
+          headers: {'Content-Type': 'application/json'},
+        );
+      }
+      expect(request.url.path, '/api/v1/me/logout');
+      expect(request.headers['Authorization'], 'Bearer access-1');
+      expect(request.body, contains('refresh-1'));
+      throw Exception('network');
+    });
+    final auth = AuthRepository(
+      storage: storage,
+      config: AuthConfig.local,
+      httpClient: authClient,
+    );
+    final url = auth.startLogin();
+    await auth.completeLogin(
+      Uri.parse('${AuthConfig.local.redirectUri}?code=abc&state=${url.queryParameters['state']}'),
+    );
+    expect(storage.values['refresh_token'], 'refresh-1');
+
+    await auth.logout();
+    expect(auth.accessToken, isNull);
+    expect(storage.values.containsKey('refresh_token'), isFalse);
   });
 }

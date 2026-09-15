@@ -19,8 +19,15 @@ class EnableBankingDiscoveryServiceTest {
         EnableBankingModels.DiscoveredBank santanderEs =
                 new EnableBankingModels.DiscoveredBank("Banco Santander Totta", "ES", null, 1);
 
+        EnableBankingModels.DiscoveredBank santanderBrand =
+                new EnableBankingModels.DiscoveredBank("Santander Totta", "PT", null, 1);
+        EnableBankingModels.DiscoveredBank revolutUab =
+                new EnableBankingModels.DiscoveredBank("Revolut Bank UAB", "PT", null, 1);
+
         assertThat(EnableBankingDiscoveryService.isV1Bank(santander, "PT")).isTrue();
+        assertThat(EnableBankingDiscoveryService.isV1Bank(santanderBrand, "PT")).isTrue();
         assertThat(EnableBankingDiscoveryService.isV1Bank(revolut, "PT")).isTrue();
+        assertThat(EnableBankingDiscoveryService.isV1Bank(revolutUab, "PT")).isTrue();
         assertThat(EnableBankingDiscoveryService.isV1Bank(bcp, "PT")).isFalse();
         assertThat(EnableBankingDiscoveryService.isV1Bank(santanderEs, "PT")).isFalse();
         assertThat(EnableBankingDiscoveryService.isMockBank(

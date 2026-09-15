@@ -13,4 +13,6 @@ public interface NotificationRepository extends JpaRepository<NotificationEntity
     Optional<NotificationEntity> findByIdAndUserId(UUID id, UUID userId);
 
     boolean existsByUserIdAndTypeAndCreatedAtAfter(UUID userId, String type, Instant createdAfter);
+
+    List<NotificationEntity> findByUserIdAndTypeAndReadAtIsNull(UUID userId, String type);
 }

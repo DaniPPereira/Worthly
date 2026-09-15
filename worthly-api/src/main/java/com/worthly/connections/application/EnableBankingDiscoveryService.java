@@ -16,7 +16,6 @@ import org.springframework.stereotype.Service;
 public class EnableBankingDiscoveryService {
 
     private static final Logger log = LoggerFactory.getLogger(EnableBankingDiscoveryService.class);
-    private static final String SANTANDER_PT = "Banco Santander Totta";
     private static final String ALL_COUNTRIES = "*";
 
     private final EnableBankingGateway gateway;
@@ -32,6 +31,10 @@ public class EnableBankingDiscoveryService {
         requireConfigured();
         String normalized = normalizeCountry(country);
         List<EnableBankingModels.DiscoveredBank> discovered = discover(normalized);
+        log.info(
+                "Enable Banking ASPSPs for {}: {}",
+                normalized,
+                discovered.stream().map(EnableBankingModels.DiscoveredBank::name).toList());
         List<EnableBankingModels.DiscoveredBank> v1 =
                 discovered.stream().filter(bank -> isV1Bank(bank, normalized)).toList();
         if (!v1.isEmpty()) {
@@ -71,10 +74,11 @@ public class EnableBankingDiscoveryService {
         if (!country.equalsIgnoreCase(bank.country())) {
             return false;
         }
-        if (SANTANDER_PT.equals(bank.name()) && "PT".equalsIgnoreCase(country)) {
+        String name = bank.name().toLowerCase(Locale.ROOT);
+        if ("PT".equalsIgnoreCase(country) && name.contains("santander")) {
             return true;
         }
-        return bank.name().startsWith("Revolut");
+        return name.startsWith("revolut") || name.contains(" revolut");
     }
 
     public static boolean isMockBank(EnableBankingModels.DiscoveredBank bank) {

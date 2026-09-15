@@ -19,7 +19,7 @@ public final class BankingMappings {
     }
 
     public static boolean includedInLiquidCash(String type) {
-        return "CURRENT".equals(type) || "SAVINGS".equals(type);
+        return "CURRENT".equals(type) || "SAVINGS".equals(type) || "CARD".equals(type);
     }
 
     public static boolean includedInNetWorth(String type) {

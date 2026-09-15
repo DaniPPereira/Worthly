@@ -132,12 +132,12 @@ public class EnableBankingRestClient implements EnableBankingGateway {
 
     @Override
     public EnableBankingModels.TransactionPage listTransactions(
-            String accountUid, LocalDate dateFrom, LocalDate dateTo, String continuationKey) {
-        String path = "/accounts/" + accountUid + "/transactions?date_from=" + dateFrom + "&date_to=" + dateTo;
-        if (continuationKey != null && !continuationKey.isBlank()) {
-            path += "&continuation_key=" + continuationKey;
-        }
-        JsonNode root = get(path);
+            String accountUid,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            String continuationKey,
+            String strategy) {
+        JsonNode root = get(transactionsPath(accountUid, dateFrom, dateTo, continuationKey, strategy));
         List<EnableBankingModels.ProviderTransaction> transactions = new ArrayList<>();
         for (JsonNode node : root.path("transactions")) {
             transactions.add(toTransaction(node));
@@ -149,6 +149,32 @@ public class EnableBankingRestClient implements EnableBankingGateway {
             continuation = null;
         }
         return new EnableBankingModels.TransactionPage(transactions, continuation);
+    }
+
+    private static String transactionsPath(
+            String accountUid,
+            LocalDate dateFrom,
+            LocalDate dateTo,
+            String continuationKey,
+            String strategy) {
+        StringBuilder path = new StringBuilder("/accounts/").append(accountUid).append("/transactions");
+        List<String> query = new ArrayList<>();
+        if (dateFrom != null) {
+            query.add("date_from=" + dateFrom);
+        }
+        if (dateTo != null) {
+            query.add("date_to=" + dateTo);
+        }
+        if (strategy != null && !strategy.isBlank()) {
+            query.add("strategy=" + strategy);
+        }
+        if (continuationKey != null && !continuationKey.isBlank()) {
+            query.add("continuation_key=" + continuationKey);
+        }
+        if (!query.isEmpty()) {
+            path.append("?").append(String.join("&", query));
+        }
+        return path.toString();
     }
 
     @Override
@@ -163,14 +189,10 @@ public class EnableBankingRestClient implements EnableBankingGateway {
     private EnableBankingModels.ProviderSession toSession(JsonNode root) {
         List<EnableBankingModels.ProviderAccount> accounts = new ArrayList<>();
         for (JsonNode node : root.path("accounts")) {
-            String iban = node.path("account_id").path("iban").asText(null);
-            accounts.add(new EnableBankingModels.ProviderAccount(
-                    text(node, "uid"),
-                    text(node, "identification_hash"),
-                    text(node, "currency"),
-                    firstNonBlank(text(node, "details"), text(node, "name"), "Account"),
-                    text(node, "cash_account_type"),
-                    iban));
+            EnableBankingModels.ProviderAccount account = toAccount(node);
+            if (account != null) {
+                accounts.add(account);
+            }
         }
         Instant expires = null;
         if (!root.path("access").path("valid_until").isMissingNode()
@@ -180,6 +202,38 @@ public class EnableBankingRestClient implements EnableBankingGateway {
         }
         return new EnableBankingModels.ProviderSession(
                 text(root, "session_id"), text(root, "status"), expires, accounts);
+    }
+
+    private static EnableBankingModels.ProviderAccount toAccount(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        if (node.isTextual()) {
+            String uid = node.asText();
+            if (uid == null || uid.isBlank()) {
+                return null;
+            }
+            return new EnableBankingModels.ProviderAccount(uid.strip(), null, null, null, null, null);
+        }
+        if (!node.isObject()) {
+            return null;
+        }
+        String uid = text(node, "uid");
+        String hash = text(node, "identification_hash");
+        if (uid == null && hash == null) {
+            return null;
+        }
+        String iban = node.path("account_id").path("iban").asText(null);
+        if (iban != null && iban.isBlank()) {
+            iban = null;
+        }
+        return new EnableBankingModels.ProviderAccount(
+                uid,
+                hash,
+                text(node, "currency"),
+                firstNonBlank(text(node, "details"), text(node, "name")),
+                text(node, "cash_account_type"),
+                iban);
     }
 
     private EnableBankingModels.ProviderTransaction toTransaction(JsonNode node) {

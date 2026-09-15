@@ -70,7 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const stamp = useMemo(() => {
     if (syncing) {
-      return "Contacting Enable Banking and Trading 212…";
+      return "Syncing connected banks and investments…";
     }
     if (!owner) {
       return "Loading…";
@@ -118,11 +118,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         syncAll,
       }}
     >
-      <div style={{ display: "flex", minHeight: "100vh", background: "var(--paper)", fontFamily: "var(--font-sans)" }}>
+      <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: "var(--paper)", fontFamily: "var(--font-sans)" }}>
         <Sidebar />
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <TopBar pathname={pathname} />
-          <div style={{ flex: 1, overflow: "auto", padding: "22px 30px 34px" }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "22px 30px 34px" }}>
             {error ? (
               <div
                 style={{

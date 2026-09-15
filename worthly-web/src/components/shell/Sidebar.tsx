@@ -79,9 +79,9 @@ function NavIcon({ label }: { label: string }) {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { owner, connections, notifications } = useAppData();
-  const reauthCount = notifications.filter(
-    (item) => item.readAt == null && (item.type === "CONNECTION_REAUTH_REQUIRED" || item.type === "CONFIGURATION_REQUIRED"),
+  const { owner, connections } = useAppData();
+  const reauthCount = connections.filter(
+    (item) => item.status === "REAUTH_REQUIRED" || item.status === "CONFIGURATION_REQUIRED",
   ).length;
 
   return (
@@ -89,11 +89,14 @@ export function Sidebar() {
       style={{
         width: "var(--sidebar)",
         flex: "none",
+        alignSelf: "stretch",
+        height: "100%",
+        minHeight: 0,
+        overflow: "auto",
         background: "var(--pine-deep)",
         display: "flex",
         flexDirection: "column",
         padding: "22px 14px 16px",
-        minHeight: "100vh",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "0 8px 22px" }}>

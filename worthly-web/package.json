@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "next lint",
-    "test": "node --import tsx --test src/lib/session.test.ts src/lib/pkce.test.ts src/lib/money.test.ts src/lib/period.test.ts src/lib/csp.test.ts"
+    "test": "node --import tsx --test src/lib/session.test.ts src/lib/pkce.test.ts src/lib/money.test.ts src/lib/period.test.ts src/lib/csp.test.ts src/lib/auth.test.ts src/lib/merchant-rule.test.ts"
   },
   "dependencies": {
     "jose": "^6.1.0",

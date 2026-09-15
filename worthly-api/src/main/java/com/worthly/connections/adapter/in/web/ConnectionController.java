@@ -130,7 +130,8 @@ public class ConnectionController {
             String institutionName,
             String institutionCountry,
             Instant lastSuccessfulSyncAt,
-            Instant consentExpiresAt) {
+            Instant consentExpiresAt,
+            String lastErrorCode) {
         static ConnectionResponse from(ProviderConnectionEntity entity) {
             return new ConnectionResponse(
                     entity.getId(),
@@ -139,7 +140,8 @@ public class ConnectionController {
                     entity.getAspspName(),
                     entity.getAspspCountry(),
                     entity.getLastSuccessfulSyncAt(),
-                    entity.getConsentExpiresAt());
+                    entity.getConsentExpiresAt(),
+                    entity.getLastErrorCode());
         }
     }
 

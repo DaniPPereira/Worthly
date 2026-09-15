@@ -1,5 +1,6 @@
 package com.worthly.identity.adapter.in.web;
 
+import com.worthly.identity.application.AccountDeletionService;
 import com.worthly.identity.application.LogoutService;
 import com.worthly.identity.application.OwnerService;
 import com.worthly.identity.domain.Owner;
@@ -12,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,10 +28,13 @@ public class MeController {
 
     private final OwnerService ownerService;
     private final LogoutService logoutService;
+    private final AccountDeletionService accountDeletionService;
 
-    public MeController(OwnerService ownerService, LogoutService logoutService) {
+    public MeController(
+            OwnerService ownerService, LogoutService logoutService, AccountDeletionService accountDeletionService) {
         this.ownerService = ownerService;
         this.logoutService = logoutService;
+        this.accountDeletionService = accountDeletionService;
     }
 
     @GetMapping("/me")
@@ -47,10 +52,20 @@ public class MeController {
 
     @PostMapping("/me/logout")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void logout(@AuthenticationPrincipal Jwt jwt, HttpServletRequest request) {
+    public void logout(
+            @AuthenticationPrincipal Jwt jwt,
+            HttpServletRequest request,
+            @RequestBody(required = false) LogoutRequest body) {
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-        String token = header != null && header.startsWith("Bearer ") ? header.substring(7) : "";
-        logoutService.logout(jwt, token);
+        String access = header != null && header.startsWith("Bearer ") ? header.substring(7) : "";
+        logoutService.logout(jwt, access, body != null ? body.refreshToken() : null);
+    }
+
+    @DeleteMapping("/me")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAccount(@AuthenticationPrincipal Jwt jwt, @RequestBody(required = false) DeleteAccountRequest body) {
+        accountDeletionService.delete(
+                UUID.fromString(jwt.getSubject()), body != null && Boolean.TRUE.equals(body.confirm()));
     }
 
     public record OwnerResponse(UUID id, String email, String reportingTimezone, String reportingCurrency) {
@@ -59,6 +74,10 @@ public class MeController {
                     owner.id(), owner.email(), owner.reportingTimezone(), owner.reportingCurrency());
         }
     }
+
+    public record LogoutRequest(String refreshToken) {}
+
+    public record DeleteAccountRequest(Boolean confirm) {}
 
     public record OwnerPatchRequest(
             @Size(min = 1, max = 64) String reportingTimezone,

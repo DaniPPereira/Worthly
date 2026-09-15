@@ -4,6 +4,7 @@ import com.worthly.audit.application.AuditService;
 import com.worthly.banking.accounts.adapter.out.persistence.BalanceSnapshotRepository;
 import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountEntity;
 import com.worthly.banking.accounts.adapter.out.persistence.FinancialAccountRepository;
+import com.worthly.banking.application.BalanceSnapshotImporter;
 import com.worthly.banking.application.BankingMappings;
 import com.worthly.banking.transactions.adapter.out.persistence.ExternalTransactionRepository;
 import com.worthly.banking.transactions.adapter.out.persistence.TransactionEntity;
@@ -27,6 +28,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +52,8 @@ public class ConnectionService {
     private final InvestmentEventRepository investmentEvents;
     private final PayloadCrypto payloadCrypto;
     private final AuditService auditService;
+    private final BalanceSnapshotImporter balanceImporter;
+    private final ApplicationEventPublisher events;
     private final WorthlyProperties.EnableBanking properties;
     private final SecureRandom random = new SecureRandom();
 
@@ -68,6 +72,8 @@ public class ConnectionService {
             InvestmentEventRepository investmentEvents,
             PayloadCrypto payloadCrypto,
             AuditService auditService,
+            BalanceSnapshotImporter balanceImporter,
+            ApplicationEventPublisher events,
             WorthlyProperties properties) {
         this.gateway = gateway;
         this.discoveryService = discoveryService;
@@ -83,6 +89,8 @@ public class ConnectionService {
         this.investmentEvents = investmentEvents;
         this.payloadCrypto = payloadCrypto;
         this.auditService = auditService;
+        this.balanceImporter = balanceImporter;
+        this.events = events;
         this.properties = properties.getEnableBanking();
     }
 
@@ -187,13 +195,21 @@ public class ConnectionService {
         connection.setConsentExpiresAt(session.expiresAt());
         connection.setLastErrorCode(null);
         connections.save(connection);
-        for (EnableBankingModels.ProviderAccount account : session.accounts()) {
-            upsertAccount(connection, account);
+        List<EnableBankingModels.ProviderAccount> sessionAccounts =
+                session.accounts() == null ? List.of() : session.accounts();
+        for (EnableBankingModels.ProviderAccount account : sessionAccounts) {
+            FinancialAccountEntity stored = upsertAccount(connection, account);
+            if (stored != null) {
+                balanceImporter.importBalancesQuietly(stored);
+            }
         }
         auditService.record(
                 attempt.getUserId(),
                 "ENABLE_BANKING_CONNECTED",
                 Map.of("connectionId", connection.getId().toString(), "aspspName", attempt.getAspspName()));
+        if ("ACTIVE".equals(connection.getStatus())) {
+            events.publishEvent(new ConnectionEstablishedEvent(attempt.getUserId(), connection.getId()));
+        }
         return UriComponentsBuilder.fromUriString(resultBase)
                 .queryParam("status", "ok")
                 .queryParam("connectionId", connection.getId().toString())
@@ -251,30 +267,62 @@ public class ConnectionService {
 
     public FinancialAccountEntity upsertAccount(
             ProviderConnectionEntity connection, EnableBankingModels.ProviderAccount account) {
+        if (account == null) {
+            return null;
+        }
+        String uid = blankToNull(account.uid());
+        String hash = blankToNull(account.identificationHash());
         FinancialAccountEntity entity = null;
-        if (account.identificationHash() != null && !account.identificationHash().isBlank()) {
-            entity = accounts.findByConnectionIdAndIdentificationHashAndActiveIsTrue(
-                            connection.getId(), account.identificationHash())
+        if (hash != null) {
+            entity = accounts.findByConnectionIdAndIdentificationHashAndActiveIsTrue(connection.getId(), hash)
                     .orElse(null);
         }
-        if (entity == null && account.uid() != null) {
-            entity = accounts.findByConnectionIdAndProviderAccountAliasAndActiveIsTrue(
-                            connection.getId(), account.uid())
+        if (entity == null && uid != null) {
+            entity = accounts.findByConnectionIdAndProviderAccountAliasAndActiveIsTrue(connection.getId(), uid)
                     .orElse(null);
         }
         if (entity == null) {
+            if (uid == null) {
+                return null;
+            }
             entity = new FinancialAccountEntity();
             entity.setUserId(connection.getUserId());
             entity.setConnectionId(connection.getId());
+            entity.setProviderAccountAlias(uid);
+            entity.setIdentificationHash(hash);
+            entity.setType(BankingMappings.accountType(account.cashAccountType()));
+            entity.setDisplayName(blankToNull(account.name()) == null ? "Account" : account.name());
+            entity.setCurrency(account.currency() == null || account.currency().isBlank()
+                    ? "EUR"
+                    : account.currency().toUpperCase());
+            entity.setMaskedIdentifier(BankingMappings.maskIdentifier(account.iban()));
+            entity.setActive(true);
+            return accounts.save(entity);
         }
-        entity.setProviderAccountAlias(account.uid());
-        entity.setIdentificationHash(account.identificationHash());
-        entity.setType(BankingMappings.accountType(account.cashAccountType()));
-        entity.setDisplayName(account.name() == null ? "Account" : account.name());
-        entity.setCurrency(account.currency() == null ? "EUR" : account.currency().toUpperCase());
-        entity.setMaskedIdentifier(BankingMappings.maskIdentifier(account.iban()));
+        if (uid != null) {
+            entity.setProviderAccountAlias(uid);
+        }
+        if (hash != null) {
+            entity.setIdentificationHash(hash);
+        }
+        if (account.cashAccountType() != null && !account.cashAccountType().isBlank()) {
+            entity.setType(BankingMappings.accountType(account.cashAccountType()));
+        }
+        if (blankToNull(account.name()) != null) {
+            entity.setDisplayName(account.name());
+        }
+        if (account.currency() != null && !account.currency().isBlank()) {
+            entity.setCurrency(account.currency().toUpperCase());
+        }
+        if (account.iban() != null) {
+            entity.setMaskedIdentifier(BankingMappings.maskIdentifier(account.iban()));
+        }
         entity.setActive(true);
         return accounts.save(entity);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     private void revokeSessionQuietly(ProviderConnectionEntity connection) {

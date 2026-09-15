@@ -45,6 +45,8 @@ class CategorizationServiceTest {
 
     CategoryEntity subscriptions;
     CategoryEntity groceries;
+    CategoryEntity housing;
+    CategoryEntity shopping;
     CategoryEntity uncategorized;
 
     @BeforeEach
@@ -54,6 +56,8 @@ class CategorizationServiceTest {
         service = new CategorizationService(categories, rules, heuristics, accounts, transactions);
         subscriptions = category("expense.subscriptions");
         groceries = category("expense.groceries");
+        housing = category("expense.housing");
+        shopping = category("expense.shopping");
         uncategorized = category("uncategorized");
     }
 
@@ -106,6 +110,36 @@ class CategorizationServiceTest {
         assertThat(tx.getCategoryId()).isEqualTo(uncategorized.getId());
         assertThat(tx.getCategorizationSource()).isEqualTo("UNCATEGORIZED");
         assertThat(tx.getEconomicType()).isEqualTo("EXPENSE");
+    }
+
+    @Test
+    void bankPrefixMatchesShortUtilityAsWholeToken() {
+        when(rules.findByUserIdAndEnabledIsTrueOrderByPriorityAsc(userId)).thenReturn(List.of());
+        when(categories.findByCode("expense.housing")).thenReturn(Optional.of(housing));
+        TransactionEntity tx = transaction("COMPRA  1531 EDP PORTO", "COMPRA  1531 EDP PORTO");
+        service.applyAutomatic(userId, tx);
+        assertThat(tx.getCategoryId()).isEqualTo(housing.getId());
+        assertThat(tx.getCategorizationSource()).isEqualTo("HEURISTIC");
+    }
+
+    @Test
+    void bankPrefixMatchesExpandedMerchantMap() {
+        when(rules.findByUserIdAndEnabledIsTrueOrderByPriorityAsc(userId)).thenReturn(List.of());
+        when(categories.findByCode("expense.shopping")).thenReturn(Optional.of(shopping));
+        TransactionEntity tx = transaction("COMPRA  1531 DECATHLON BRAGA", "COMPRA  1531 DECATHLON BRAGA");
+        service.applyAutomatic(userId, tx);
+        assertThat(tx.getCategoryId()).isEqualTo(shopping.getId());
+        assertThat(tx.getCategorizationSource()).isEqualTo("HEURISTIC");
+    }
+
+    @Test
+    void shortKeyDoesNotMatchInsideALongerWord() {
+        when(rules.findByUserIdAndEnabledIsTrueOrderByPriorityAsc(userId)).thenReturn(List.of());
+        when(categories.findByCode("uncategorized")).thenReturn(Optional.of(uncategorized));
+        TransactionEntity tx = transaction("Catapult Store", "Catapult Store");
+        service.applyAutomatic(userId, tx);
+        assertThat(tx.getCategoryId()).isEqualTo(uncategorized.getId());
+        assertThat(tx.getCategorizationSource()).isEqualTo("UNCATEGORIZED");
     }
 
     @Test
