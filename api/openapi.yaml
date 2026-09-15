@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Worthly API
-  version: 4.3.0
+  version: 4.4.0
   description: |
     Canonical MVP API contract for Worthly.
 
@@ -106,6 +106,86 @@ paths:
         `web_session` cookie. Mobile MUST delete secure-storage material.
       responses:
         '204': {description: Logged out}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/totp:
+    get:
+      tags: [Identity]
+      operationId: getTotp
+      responses:
+        '200':
+          description: Whether authenticator 2FA is enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enabled]
+                properties:
+                  enabled: {type: boolean}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/totp/start:
+    post:
+      tags: [Identity]
+      operationId: startTotp
+      security: [{oauth2: [worthly.write]}]
+      responses:
+        '200':
+          description: Pending TOTP secret and otpauth URI
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [secret, otpauthUri, qrSvg]
+                properties:
+                  secret: {type: string}
+                  otpauthUri: {type: string}
+                  qrSvg: {type: string}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /me/totp/confirm:
+    post:
+      tags: [Identity]
+      operationId: confirmTotp
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, minLength: 6, maxLength: 32}
+      responses:
+        '200':
+          description: Recovery codes, shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recoveryCodes]
+                properties:
+                  recoveryCodes:
+                    type: array
+                    items: {type: string}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/totp/disable:
+    post:
+      tags: [Identity]
+      operationId: disableTotp
+      security: [{oauth2: [worthly.write]}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, minLength: 6, maxLength: 32}
+      responses:
+        '204': {description: Authenticator turned off}
+        '400': {$ref: '#/components/responses/BadRequest'}
         '401': {$ref: '#/components/responses/Unauthorized'}
   /devices:
     get:

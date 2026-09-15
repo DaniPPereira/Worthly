@@ -56,6 +56,7 @@ public class AccountDeletionService {
             jdbc.update("DELETE FROM sync_run WHERE connection_id = ?", connection.getId());
             jdbc.update("DELETE FROM provider_connection WHERE id = ?", connection.getId());
         }
+        jdbc.update("DELETE FROM totp_recovery_code WHERE user_id = ?", userId);
         jdbc.update("DELETE FROM transfer_match WHERE user_id = ?", userId);
         jdbc.update("DELETE FROM categorization_rule WHERE user_id = ?", userId);
         jdbc.update("DELETE FROM category WHERE user_id = ? AND system = false", userId);

@@ -33,6 +33,11 @@ user on an empty database. No email-based password reset in v1. Recovery is
 a local administrative CLI/container command requiring host access and a
 new password secret file; it revokes all sessions.
 
+Optional TOTP is off by default. The owner can enable an authenticator
+app in Settings (QR + manual key). The secret is encrypted at rest.
+Sign-in then asks for a 6-digit code or a one-time recovery code after
+the password. Recovery codes are hashed; the plaintext is shown once.
+
 ## Secrets
 
 Never in Git, frontend bundles, logs or DB dumps where avoidable: -
@@ -98,7 +103,7 @@ payloads. Account IDs are masked or internal opaque IDs.
 -   exponential delay may supplement lockout;
 -   audit success/failure without password details;
 -   application rate limit per client IP, 15 minute window:
-    - `POST /login`, `POST /register`, `POST /api/v1/register`: 20;
+    - `POST /login`, `POST /login/totp`, `POST /register`, `POST /api/v1/register`: 20;
     - `POST /oauth2/token` from a public IP: 20;
     - `POST /oauth2/token` from loopback/RFC1918 (BFF/Docker): 600,
       so many users refreshing through `worthly-web` are not one bucket;
@@ -157,6 +162,6 @@ pass. The web bar is:
 | Open registration | `POST /api/v1/register`; no invite in the product UI |
 | Encrypted backups | `infrastructure/backup/backup.sh` + `WORTHLY_BACKUP_KEY_FILE` |
 
-Production must set `WORTHLY_BACKUP_KEY_FILE`. OpenAPI 4.3.0 is the HTTP
+Production must set `WORTHLY_BACKUP_KEY_FILE`. OpenAPI 4.4.0 is the HTTP
 contract for this closeout.
 

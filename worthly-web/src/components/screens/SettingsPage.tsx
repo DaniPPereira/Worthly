@@ -7,6 +7,7 @@ import { useAppData } from "@/lib/app-data";
 import { customCategories, defaultParentId, parentCategories } from "@/lib/categories";
 import { formatMerchantRule, splitMatchPhrases } from "@/lib/merchant-rule";
 import { formatInstant } from "@/lib/period";
+import { TotpSettings } from "@/components/settings/TotpSettings";
 import type { CategorizationRule, Category, Device, TransactionPage } from "@/lib/types";
 
 const TIMEZONES = ["Europe/Lisbon", "Europe/London", "UTC"];
@@ -221,6 +222,7 @@ export function SettingsPage() {
       </Group>
 
       <Group title="Security">
+        <TotpSettings />
         <ToggleRow
           label="Privacy mode"
           sub="Hide every monetary value in this browser"

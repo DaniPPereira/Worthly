@@ -27,5 +27,5 @@ Locked for v4.3 (hosted web closeout on top of v4.2):
 - Android API 26+ / iOS 16+
 - production host baseline 2 vCPU / 4 GiB RAM / 40 GiB disk
 - OAuth redirect URIs allowlisted (ADR-002)
-- OpenAPI 4.3.0 is the HTTP contract
+- OpenAPI 4.4.0 is the HTTP contract
 - encrypted pg_dump backups via WORTHLY_BACKUP_KEY_FILE

@@ -32,6 +32,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     implementation("org.bouncycastle:bcprov-jdk18on:1.80")
+    implementation("com.google.zxing:core:3.5.3")
 
     compileOnly("org.springframework.boot:spring-boot-configuration-processor")
     annotationProcessor("org.springframework.boot:spring-boot-configuration-processor")

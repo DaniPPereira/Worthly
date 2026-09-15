@@ -20,7 +20,18 @@ app_user (
   reporting_currency char(3) not null default 'EUR',
   failed_login_count int not null default 0,
   locked_until timestamptz null,
-  last_login_at timestamptz null
+  last_login_at timestamptz null,
+  totp_secret_encrypted bytea null,
+  totp_pending_secret_encrypted bytea null,
+  totp_enabled_at timestamptz null,
+  totp_last_used_counter bigint null
+)
+
+totp_recovery_code (
+  id uuid pk,
+  user_id uuid not null references app_user(id),
+  code_hash text not null,
+  used_at timestamptz null
 )
 
 -- BFF session metadata for revocation/audit. Resource Server does not

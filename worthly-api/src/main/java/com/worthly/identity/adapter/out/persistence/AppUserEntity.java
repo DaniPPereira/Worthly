@@ -44,6 +44,18 @@ public class AppUserEntity {
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
 
+    @Column(name = "totp_secret_encrypted", columnDefinition = "bytea")
+    private byte[] totpSecretEncrypted;
+
+    @Column(name = "totp_pending_secret_encrypted", columnDefinition = "bytea")
+    private byte[] totpPendingSecretEncrypted;
+
+    @Column(name = "totp_enabled_at")
+    private Instant totpEnabledAt;
+
+    @Column(name = "totp_last_used_counter")
+    private Long totpLastUsedCounter;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -135,5 +147,41 @@ public class AppUserEntity {
 
     public void setLastLoginAt(Instant lastLoginAt) {
         this.lastLoginAt = lastLoginAt;
+    }
+
+    public byte[] getTotpSecretEncrypted() {
+        return totpSecretEncrypted;
+    }
+
+    public void setTotpSecretEncrypted(byte[] totpSecretEncrypted) {
+        this.totpSecretEncrypted = totpSecretEncrypted;
+    }
+
+    public byte[] getTotpPendingSecretEncrypted() {
+        return totpPendingSecretEncrypted;
+    }
+
+    public void setTotpPendingSecretEncrypted(byte[] totpPendingSecretEncrypted) {
+        this.totpPendingSecretEncrypted = totpPendingSecretEncrypted;
+    }
+
+    public Instant getTotpEnabledAt() {
+        return totpEnabledAt;
+    }
+
+    public void setTotpEnabledAt(Instant totpEnabledAt) {
+        this.totpEnabledAt = totpEnabledAt;
+    }
+
+    public Long getTotpLastUsedCounter() {
+        return totpLastUsedCounter;
+    }
+
+    public void setTotpLastUsedCounter(Long totpLastUsedCounter) {
+        this.totpLastUsedCounter = totpLastUsedCounter;
+    }
+
+    public boolean totpEnabled() {
+        return totpEnabledAt != null && totpSecretEncrypted != null;
     }
 }

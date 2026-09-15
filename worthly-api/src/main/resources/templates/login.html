@@ -31,7 +31,7 @@
         <span>Worthly</span>
     </div>
     <h1>Sign in to Worthly.</h1>
-    <p>Each account keeps its own banks and investments. Credentials stay on your server.</p>
+    <p>Each account keeps its own banks and investments.</p>
     <p th:if="${param.registered}">Account created. Sign in to continue.</p>
     <p class="error" th:if="${param.error}">Sign-in failed. Refresh this page and try again.</p>
     <form th:action="@{/login}" method="post">

@@ -99,11 +99,16 @@ public class SecurityConfig {
     @Bean
     @Order(3)
     SecurityFilterChain loginSecurityFilterChain(
-            HttpSecurity http, CorsConfigurationSource cors, WorthlyProperties properties) throws Exception {
+            HttpSecurity http,
+            CorsConfigurationSource cors,
+            WorthlyProperties properties,
+            TotpAuthenticationSuccessHandler totpAuthenticationSuccessHandler)
+            throws Exception {
         CsrfTokenRequestAttributeHandler csrfRequestHandler = new CsrfTokenRequestAttributeHandler();
         http.authorizeHttpRequests(auth -> auth.requestMatchers(
                                 "/",
                                 "/login",
+                                "/login/totp",
                                 "/logout",
                                 "/register",
                                 "/error",
@@ -115,7 +120,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.csrfTokenRequestHandler(csrfRequestHandler))
                 .addFilterAfter(new CsrfTokenEagerLoadFilter(), CsrfFilter.class)
                 .formLogin(form -> form.loginPage("/login")
-                        .defaultSuccessUrl(webAppOrigin(properties), false)
+                        .successHandler(totpAuthenticationSuccessHandler)
                         .permitAll())
                 .logout(logout -> logout.logoutRequestMatcher(
                                 PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.GET, "/logout"))

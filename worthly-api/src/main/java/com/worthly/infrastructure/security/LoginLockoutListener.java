@@ -31,7 +31,17 @@ public class LoginLockoutListener {
     @EventListener
     @Transactional
     public void onSuccess(AuthenticationSuccessEvent event) {
-        String email = name(event.getAuthentication());
+        recordSuccess(name(event.getAuthentication()));
+    }
+
+    @EventListener
+    @Transactional
+    public void onFailure(AbstractAuthenticationFailureEvent event) {
+        recordFailure(name(event.getAuthentication()));
+    }
+
+    @Transactional
+    public void recordSuccess(String email) {
         users.findByEmailIgnoreCase(email).ifPresent(user -> {
             user.setFailedLoginCount(0);
             user.setLockedUntil(null);
@@ -43,10 +53,8 @@ public class LoginLockoutListener {
         });
     }
 
-    @EventListener
     @Transactional
-    public void onFailure(AbstractAuthenticationFailureEvent event) {
-        String email = name(event.getAuthentication());
+    public void recordFailure(String email) {
         users.findByEmailIgnoreCase(email).ifPresent(user -> {
             Instant now = Instant.now();
             if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(now)) {

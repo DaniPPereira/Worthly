@@ -82,7 +82,7 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
             path = normalize(request.getRequestURI());
         }
         return switch (path) {
-            case "/login" -> Match.LOGIN;
+            case "/login", "/login/totp" -> Match.LOGIN;
             case "/register", "/api/v1/register" -> Match.REGISTER;
             case "/oauth2/token" -> Match.TOKEN;
             default -> Match.NONE;
