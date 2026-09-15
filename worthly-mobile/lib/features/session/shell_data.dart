@@ -9,12 +9,18 @@ class ShellData {
     required this.notifications,
     required this.categories,
     required this.accounts,
+    required this.hasTransactions,
   });
 
   final List<Connection> connections;
   final List<AppNotification> notifications;
   final List<Category> categories;
   final List<Account> accounts;
+  final bool hasTransactions;
+
+  bool get showInvestments => connections.any((item) => item.includesHoldings);
+  bool get showAccounts => accounts.isNotEmpty;
+  bool get showTransactions => hasTransactions;
 }
 
 final shellDataProvider = FutureProvider<ShellData>((ref) async {
@@ -23,16 +29,19 @@ final shellDataProvider = FutureProvider<ShellData>((ref) async {
   final notifications = await client.get('/notifications', (json) => listOf(json, AppNotification.fromJson));
   final categories = await client.get('/categories', (json) => listOf(json, Category.fromJson));
   final accounts = await client.get('/accounts', (json) => listOf(json, Account.fromJson));
+  final tx = await client.get('/transactions?size=1', parseTxPage);
   return ShellData(
     connections: connections,
     notifications: notifications,
     categories: categories,
     accounts: accounts,
+    hasTransactions: tx.total > 0,
   );
 });
 
 final tabIndexProvider = StateProvider<int>((ref) => 0);
 final connectionsOpenProvider = StateProvider<bool>((ref) => false);
+final categoriesOpenProvider = StateProvider<bool>((ref) => false);
 final connectionResultProvider = StateProvider<String?>((ref) => null);
 
 class TransactionFocus {
@@ -45,6 +54,10 @@ class TransactionFocus {
 }
 
 final transactionFocusProvider = StateProvider<TransactionFocus?>((ref) => null);
+
+int cashAccountCount(List<Account> accounts, String currency) {
+  return accounts.where((item) => item.currency == currency && (item.includedInLiquidCash || item.type == 'BROKERAGE')).length;
+}
 
 String connectionStatusLabel(String status) {
   switch (status) {

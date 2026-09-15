@@ -256,6 +256,13 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                         onPressed: () => _applyMonth(Period.monthKey(owner.reportingTimezone)),
                         child: const Text('This month'),
                       ),
+                      TextButton(
+                        onPressed: () {
+                          ref.read(connectionsOpenProvider.notifier).state = false;
+                          ref.read(categoriesOpenProvider.notifier).state = true;
+                        },
+                        child: const Text('Categories'),
+                      ),
                       const Spacer(),
                       TextButton.icon(
                         onPressed: _exporting ? null : _export,
@@ -306,9 +313,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
             else if (_page!.items.isEmpty)
               EmptyState(
                 title: 'No transactions in this view',
-                body: (shell?.connections.any((item) => item.provider == 'ENABLE_BANKING') ?? false)
-                    ? 'Try another filter, date range, or wait for the next successful sync.'
-                    : 'Connect Santander or Revolut from Connections to import card and account purchases. Trading 212 activity stays under Investments.',
+                body: 'Try another filter or date range.',
               )
             else
               WorthlyCard(

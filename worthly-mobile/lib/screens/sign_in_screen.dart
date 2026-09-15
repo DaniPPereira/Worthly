@@ -1,124 +1,232 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:worthly_mobile/features/auth/auth_config.dart';
+import 'package:worthly_mobile/features/auth/auth_repository.dart';
 import 'package:worthly_mobile/features/session/session.dart';
 import 'package:worthly_mobile/screens/register_screen.dart';
 import 'package:worthly_mobile/theme/colors.dart';
 import 'package:worthly_mobile/theme/theme.dart';
-import 'package:worthly_mobile/widgets/rising_w.dart';
+import 'package:worthly_mobile/widgets/public_landing.dart';
 
-class SignInScreen extends ConsumerWidget {
+class SignInScreen extends ConsumerStatefulWidget {
   const SignInScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(sessionProvider);
-    final faceId = ref.watch(faceIdProvider);
-    return Scaffold(
-      backgroundColor: WorthlyColors.paper,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 72, 28, 28),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const RisingW(size: 42, onDark: false),
-              const SizedBox(height: 16),
-              const Text(
-                'Worthly',
-                style: TextStyle(fontSize: 36, fontWeight: FontWeight.w600, letterSpacing: -1, color: WorthlyColors.ink),
+  ConsumerState<SignInScreen> createState() => _SignInScreenState();
+}
+
+enum _AuthPanel { land, signIn, totp }
+
+class _SignInScreenState extends ConsumerState<SignInScreen> {
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  final _totp = TextEditingController();
+  _AuthPanel _panel = _AuthPanel.land;
+  String? _error;
+  bool _registered = false;
+  bool _busy = false;
+  bool _showPassword = false;
+
+  @override
+  void dispose() {
+    _email.dispose();
+    _password.dispose();
+    _totp.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openRegister() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+    if (!mounted || created != true) {
+      return;
+    }
+    setState(() {
+      _panel = _AuthPanel.land;
+      _registered = true;
+      _error = null;
+    });
+  }
+
+  Future<void> _submit({bool totp = false}) async {
+    setState(() {
+      _error = null;
+      _busy = true;
+    });
+    try {
+      await ref.read(sessionProvider.notifier).signIn(
+        email: _email.text.trim(),
+        password: _password.text,
+        totpCode: totp ? _totp.text.trim() : null,
+      );
+    } on AuthFailure catch (failure) {
+      if (!mounted) {
+        return;
+      }
+      if (failure.code == 'totp_required') {
+        setState(() {
+          _panel = _AuthPanel.totp;
+          _totp.clear();
+        });
+        return;
+      }
+      setState(() {
+        _error = failure.code == 'totp_invalid'
+            ? 'That code is not valid.'
+            : 'Check your email and password.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sessionError = ref.watch(sessionProvider).error;
+    return PublicLanding(
+      child: switch (_panel) {
+        _AuthPanel.land => _land(sessionError),
+        _AuthPanel.signIn => _signIn(),
+        _AuthPanel.totp => _totpPanel(),
+      },
+    );
+  }
+
+  Widget _land(String? sessionError) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const PublicPanelHeader(title: 'Start here.', subtitle: 'Create an account, or sign in.'),
+        if (_registered) ...[
+          const SizedBox(height: 12),
+          const Text('Account created. Sign in to continue.', style: TextStyle(color: WorthlyColors.gain, fontSize: 13)),
+        ],
+        if (sessionError != null) ...[
+          const SizedBox(height: 12),
+          Text(sessionError, style: const TextStyle(color: WorthlyColors.loss, fontSize: 13)),
+        ],
+        const SizedBox(height: 18),
+        PublicPrimaryButton(label: 'Create an account', onPressed: _busy ? null : _openRegister),
+        const SizedBox(height: 18),
+        PublicGhostButton(
+          label: 'Sign in',
+          onPressed: _busy
+              ? null
+              : () => setState(() {
+                    _panel = _AuthPanel.signIn;
+                    _error = null;
+                  }),
+        ),
+        const PublicLegalLinks(),
+      ],
+    );
+  }
+
+  Widget _signIn() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const PublicPanelHeader(title: 'Sign in.', subtitle: 'Use the email and password for your account.'),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 13)),
+        ],
+        const SizedBox(height: 18),
+        Text('EMAIL', style: labelStyle()),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _email,
+          keyboardType: TextInputType.emailAddress,
+          autofillHints: const [AutofillHints.username],
+          textInputAction: TextInputAction.next,
+          decoration: publicFieldDecoration(),
+        ),
+        const SizedBox(height: 12),
+        Text('PASSWORD', style: labelStyle()),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _password,
+          obscureText: !_showPassword,
+          autofillHints: const [AutofillHints.password],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (!_busy) {
+              _submit();
+            }
+          },
+          decoration: publicFieldDecoration().copyWith(
+            suffixIcon: IconButton(
+              tooltip: _showPassword ? 'Hide password' : 'Show password',
+              onPressed: () => setState(() => _showPassword = !_showPassword),
+              icon: Icon(
+                _showPassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                size: 20,
+                color: WorthlyColors.faint,
               ),
-              const SizedBox(height: 10),
-              const Text(
-                'Sign in to your own Worthly server. Your bank credentials are never entered here.',
-                style: TextStyle(fontSize: 14, height: 1.55, color: WorthlyColors.muted),
-              ),
-              const SizedBox(height: 34),
-              Text('SERVER', style: labelStyle()),
-              const SizedBox(height: 6),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(15),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: WorthlyColors.ink.withValues(alpha: 0.12)),
-                ),
-                child: Text(Uri.parse(AuthConfig.local.issuer).host, style: mono(size: 14)),
-              ),
-              const SizedBox(height: 20),
-              GestureDetector(
-                onTap: () => ref.read(faceIdProvider.notifier).setEnabled(!faceId),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        color: faceId ? WorthlyColors.pine : Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: WorthlyColors.pine),
-                      ),
-                      child: faceId ? const Icon(Icons.check, size: 14, color: WorthlyColors.cream) : null,
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text('Enable Face ID on this device', style: TextStyle(fontSize: 13.5)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 26),
-              if (session.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(session.error!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 13)),
-                ),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: FilledButton(
-                  onPressed: () => ref.read(sessionProvider.notifier).signIn(),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: WorthlyColors.pine,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Sign in', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                height: 54,
-                child: OutlinedButton(
-                  onPressed: () async {
-                    final created = await Navigator.of(context).push<bool>(
-                      MaterialPageRoute(builder: (_) => const RegisterScreen()),
-                    );
-                    if (created == true && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Account created. Sign in to continue.')),
-                      );
-                    }
-                  },
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: WorthlyColors.pine,
-                    side: const BorderSide(color: WorthlyColors.pine),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: const Text('Create an account', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                ),
-              ),
-              const Spacer(),
-              const Text(
-                'Create an account here if you need one. Sign-in uses Authorization Code + PKCE in the system browser.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 11, height: 1.5, color: WorthlyColors.faint),
-              ),
-            ],
+            ),
           ),
         ),
-      ),
+        const SizedBox(height: 18),
+        PublicPrimaryButton(label: _busy ? 'Signing in…' : 'Sign in', onPressed: _busy ? null : () => _submit()),
+        const SizedBox(height: 16),
+        Center(
+          child: TextButton(
+            onPressed: _busy
+                ? null
+                : () => setState(() {
+                      _panel = _AuthPanel.land;
+                      _error = null;
+                    }),
+            child: const Text('Back', style: TextStyle(color: WorthlyColors.muted, fontSize: 13)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _totpPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const PublicPanelHeader(title: 'Enter your code.', subtitle: 'Use the authenticator app for this account.'),
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 13)),
+        ],
+        const SizedBox(height: 18),
+        Text('CODE', style: labelStyle()),
+        const SizedBox(height: 6),
+        TextField(
+          controller: _totp,
+          keyboardType: TextInputType.visiblePassword,
+          textCapitalization: TextCapitalization.characters,
+          autofillHints: const [AutofillHints.oneTimeCode],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (!_busy) {
+              _submit(totp: true);
+            }
+          },
+          decoration: publicFieldDecoration(),
+        ),
+        const SizedBox(height: 18),
+        PublicPrimaryButton(label: _busy ? 'Signing in…' : 'Continue', onPressed: _busy ? null : () => _submit(totp: true)),
+        const SizedBox(height: 16),
+        Center(
+          child: TextButton(
+            onPressed: _busy
+                ? null
+                : () => setState(() {
+                      _panel = _AuthPanel.signIn;
+                      _totp.clear();
+                      _error = null;
+                    }),
+            child: const Text('Back', style: TextStyle(color: WorthlyColors.muted, fontSize: 13)),
+          ),
+        ),
+      ],
     );
   }
 }

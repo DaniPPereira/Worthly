@@ -29,6 +29,10 @@ class UnauthorizedApiIT extends AbstractIntegrationTest {
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
         mockMvc.perform(get("/api/v1/connections")).andExpect(status().isUnauthorized());
     }
 }

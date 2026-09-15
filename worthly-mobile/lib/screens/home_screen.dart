@@ -110,7 +110,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final connections = shell?.connections ?? [];
       final needsReauth = connections.any((item) => item.status == 'REAUTH_REQUIRED');
       final connectedBank = connections.any(
-        (item) => item.provider == 'ENABLE_BANKING' && (item.status == 'ACTIVE' || item.status == 'ERROR'),
+        (item) => item.isBank && (item.status == 'ACTIVE' || item.status == 'ERROR'),
       );
       final title = needsReauth
           ? 'Bank access needs a refresh'
@@ -121,7 +121,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ? 'Reauthorize on Connections. Worthly cannot read balances until the bank session is valid again.'
           : connectedBank
               ? 'A bank is connected, but Worthly has not stored balances yet. Open Connections and tap Sync now. If that fails, reconnect the bank.'
-              : 'Connect a bank or Trading 212 to see cash and net worth. Totals stay grouped by currency.';
+              : 'Connect a bank to see cash and net worth. Totals stay grouped by currency.';
       return ListView(
         padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
         children: [
@@ -131,15 +131,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
     final currentMonth = Period.monthKey(owner.reportingTimezone);
     final monthly = model.months.where((item) => item.month == _month).firstOrNull?.totalsByCurrency.where((item) => item.currency == currency).firstOrNull;
-    final liquid = (shell?.accounts ?? []).where((item) => item.includedInLiquidCash && item.currency == currency).toList();
+    final cashCount = cashAccountCount(shell?.accounts ?? [], currency);
     final investmentRow = model.investments?.totalsByCurrency.where((item) => item.currency == currency).firstOrNull;
     final brokerageCash = investmentRow?.cash ?? '0.00';
     final cashAvailable = MoneyFmt.add(row.liquidCash, brokerageCash);
-    final hasBrokerageCash = MoneyFmt.cents(brokerageCash) != BigInt.zero;
     final portfolioValue = investmentRow?.portfolioValue ?? '0.00';
     final monthLabel = _month == currentMonth ? 'This month' : Period.monthLabel(_month);
     final reauthConnection = shell?.connections.where((item) => item.status == 'REAUTH_REQUIRED').firstOrNull;
-    final hasBank = shell?.connections.any((item) => item.provider == 'ENABLE_BANKING') ?? false;
+    final hasBank = shell?.connections.any((item) => item.isBank) ?? false;
+    final showInvestments = shell?.showInvestments ?? false;
     final categoryRows = _categoryRows(model.expenses.items, shell?.categories ?? [], currency);
     final maxCat = categoryRows.isEmpty ? BigInt.zero : categoryRows.first.cents;
     return ListView(
@@ -179,12 +179,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               Text(MoneyFmt.amount(cashAvailable, row.currency, privacy: privacy), style: serif(size: 46)),
               const SizedBox(height: 6),
               Text(
-                [
-                  '${liquid.length} bank account${liquid.length == 1 ? '' : 's'}',
-                  if (hasBrokerageCash) 'includes Trading 212 cash',
-                  'holdings are current',
-                  row.currency,
-                ].join(' · '),
+                '$cashCount account${cashCount == 1 ? '' : 's'} · ${row.currency}',
                 style: TextStyle(fontSize: 12, color: WorthlyColors.cream.withValues(alpha: 0.62)),
               ),
               const SizedBox(height: 16),
@@ -223,19 +218,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ],
                     ),
                   ),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('HOLDINGS', style: labelStyle(color: WorthlyColors.cream.withValues(alpha: 0.6))),
-                        const SizedBox(height: 5),
-                        Text(
-                          MoneyFmt.amount(portfolioValue, row.currency, privacy: privacy),
-                          style: serif(size: 22, color: WorthlyColors.gold),
-                        ),
-                      ],
+                  if (showInvestments)
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('HOLDINGS', style: labelStyle(color: WorthlyColors.cream.withValues(alpha: 0.6))),
+                          const SizedBox(height: 5),
+                          Text(
+                            MoneyFmt.amount(portfolioValue, row.currency, privacy: privacy),
+                            style: serif(size: 22, color: WorthlyColors.gold),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ],
@@ -251,7 +247,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             child: ListTile(
               onTap: () {
-                ref.read(tabIndexProvider.notifier).state = 3;
+                ref.read(categoriesOpenProvider.notifier).state = false;
                 ref.read(connectionsOpenProvider.notifier).state = true;
               },
               title: Text(
@@ -294,94 +290,91 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           children: [
             _metric('Income', monthly == null ? '—' : MoneyFmt.amount(monthly.income, monthly.currency, privacy: privacy), monthLabel, WorthlyColors.gain, model.months.map((m) => centsAsDouble(_row(m, currency)?.income ?? '0')).toList()),
             _metric('Expenses', monthly == null ? '—' : MoneyFmt.amount(monthly.expenses, monthly.currency, privacy: privacy), 'Transfers excluded', WorthlyColors.loss, model.months.map((m) => centsAsDouble(_row(m, currency)?.expenses ?? '0')).toList()),
-            _metric('Funded', monthly == null ? '—' : MoneyFmt.amount(monthly.invested, monthly.currency, privacy: privacy), 'Deposits to Trading 212', WorthlyColors.brass, model.months.map((m) => centsAsDouble(_row(m, currency)?.invested ?? '0')).toList()),
+            if (showInvestments)
+              _metric('Funded', monthly == null ? '—' : MoneyFmt.amount(monthly.invested, monthly.currency, privacy: privacy), 'Deposits to investments', WorthlyColors.brass, model.months.map((m) => centsAsDouble(_row(m, currency)?.invested ?? '0')).toList()),
             _metric('Savings rate', monthly == null ? '—' : MoneyFmt.rate(monthly.savingsRate, privacy: privacy), monthly?.savingsRateReason ?? 'Income minus expenses', WorthlyColors.pine, model.months.map((m) => centsAsDouble(_row(m, currency)?.savingsRate ?? '0')).toList()),
           ],
         ),
-        const SizedBox(height: 12),
-        WorthlyCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('WHERE IT WENT · ${Period.monthLabel(_month).toUpperCase()}', style: labelStyle()),
-              const SizedBox(height: 14),
-              if (categoryRows.isEmpty)
-                Text(
-                  hasBank
-                      ? 'No expenses in this currency this month.'
-                      : 'Card and current-account purchases appear after you connect a bank. Trading 212 is investments only.',
-                  style: const TextStyle(fontSize: 13, color: WorthlyColors.muted),
-                )
-              else
-                for (var i = 0; i < categoryRows.length; i++) ...[
-                  InkWell(
-                    onTap: () {
-                      final range = Period.monthRange(_month);
-                      ref.read(transactionFocusProvider.notifier).state = TransactionFocus(
-                        categoryId: categoryRows[i].categoryId,
-                        from: range.from,
-                        to: range.to,
-                        label: categoryRows[i].name,
-                      );
-                      ref.read(tabIndexProvider.notifier).state = 1;
-                    },
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(child: Text(categoryRows[i].name, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13))),
-                            Text(MoneyFmt.amount(MoneyFmt.fromCents(categoryRows[i].cents), currency, privacy: privacy), style: mono(size: 12.5, color: const Color(0xFF3E4A47))),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: LinearProgressIndicator(
-                            value: maxCat == BigInt.zero ? 0 : categoryRows[i].cents.toDouble() / maxCat.toDouble(),
-                            minHeight: 6,
-                            backgroundColor: WorthlyColors.ink.withValues(alpha: 0.07),
-                            color: _catColors[i % _catColors.length],
+        if (categoryRows.isNotEmpty || hasBank) ...[
+          const SizedBox(height: 12),
+          WorthlyCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('WHERE IT WENT · ${Period.monthLabel(_month).toUpperCase()}', style: labelStyle()),
+                const SizedBox(height: 14),
+                if (categoryRows.isEmpty)
+                  const Text(
+                    'No expenses in this currency this month.',
+                    style: TextStyle(fontSize: 13, color: WorthlyColors.muted),
+                  )
+                else
+                  for (var i = 0; i < categoryRows.length; i++) ...[
+                    InkWell(
+                      onTap: () {
+                        final range = Period.monthRange(_month);
+                        ref.read(transactionFocusProvider.notifier).state = TransactionFocus(
+                          categoryId: categoryRows[i].categoryId,
+                          from: range.from,
+                          to: range.to,
+                          label: categoryRows[i].name,
+                        );
+                        ref.read(tabIndexProvider.notifier).state = 1;
+                      },
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: Text(categoryRows[i].name, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13))),
+                              Text(MoneyFmt.amount(MoneyFmt.fromCents(categoryRows[i].cents), currency, privacy: privacy), style: mono(size: 12.5, color: const Color(0xFF3E4A47))),
+                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(3),
+                            child: LinearProgressIndicator(
+                              value: maxCat == BigInt.zero ? 0 : categoryRows[i].cents.toDouble() / maxCat.toDouble(),
+                              minHeight: 6,
+                              backgroundColor: WorthlyColors.ink.withValues(alpha: 0.07),
+                              color: _catColors[i % _catColors.length],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(height: 12),
+                  ],
+                if (categoryRows.isNotEmpty)
+                  const Text(
+                    'Tap a category to see those expenses.',
+                    style: TextStyle(fontSize: 11.5, height: 1.45, color: WorthlyColors.faint),
                   ),
-                  const SizedBox(height: 12),
-                ],
-              if (categoryRows.isNotEmpty)
-                const Text(
-                  'Tap a category to see those expenses.',
-                  style: TextStyle(fontSize: 11.5, height: 1.45, color: WorthlyColors.faint),
-                ),
-            ],
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-        WorthlyCard(
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Expanded(child: Text('RECENT MOVEMENTS', style: labelStyle())),
-                  TextButton(
-                    onPressed: () => ref.read(tabIndexProvider.notifier).state = 1,
-                    child: const Text('See all', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5)),
-                  ),
-                ],
-              ),
-              if (model.recent.items.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
-                  child: Text('No movements yet.', style: TextStyle(fontSize: 13, color: WorthlyColors.muted)),
-                )
-              else
+        ],
+        if (model.recent.items.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          WorthlyCard(
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text('RECENT MOVEMENTS', style: labelStyle())),
+                    TextButton(
+                      onPressed: () => ref.read(tabIndexProvider.notifier).state = 1,
+                      child: const Text('See all', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5)),
+                    ),
+                  ],
+                ),
                 ...model.recent.items.take(4).map((tx) {
                   final category = shell?.categories.where((item) => item.id == tx.categoryId).firstOrNull;
                   return _TxLine(owner: owner, privacy: privacy, tx: tx, category: category?.label ?? 'Uncategorized');
                 }),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

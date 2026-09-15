@@ -55,6 +55,10 @@ class AuthRateLimitFilterTest {
         html.setServletPath("/register");
         assertThat(AuthRateLimitFilter.match(html)).isEqualTo(AuthRateLimitFilter.Match.REGISTER);
 
+        MockHttpServletRequest nativeLogin = new MockHttpServletRequest("POST", "/api/v1/auth/login");
+        nativeLogin.setServletPath("/api/v1/auth/login");
+        assertThat(AuthRateLimitFilter.match(nativeLogin)).isEqualTo(AuthRateLimitFilter.Match.LOGIN);
+
         MockHttpServletRequest get = new MockHttpServletRequest("GET", "/login");
         get.setServletPath("/login");
         assertThat(AuthRateLimitFilter.match(get)).isEqualTo(AuthRateLimitFilter.Match.NONE);

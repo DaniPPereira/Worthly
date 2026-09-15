@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CurrencyTabs, EmptyState } from "@/components/ui/Primitives";
+import { FeatureGate } from "@/components/shell/FeatureGate";
+import { CurrencyTabs } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { isBank, statusTone, useAppData } from "@/lib/app-data";
+import { hasInvestmentsNav, isBank, statusTone, useAppData } from "@/lib/app-data";
 import { formatAmount } from "@/lib/money";
 import { formatInstant } from "@/lib/period";
 import type { Account, Balance, WealthSummary } from "@/lib/types";
@@ -11,7 +12,7 @@ import type { Account, Balance, WealthSummary } from "@/lib/types";
 type AccountView = Account & { balance: Balance | null };
 
 export function AccountsPage() {
-  const { owner, privacy, connections } = useAppData();
+  const { owner, privacy, connections, accounts: shellAccounts } = useAppData();
   const [accounts, setAccounts] = useState<AccountView[] | null>(null);
   const [wealth, setWealth] = useState<WealthSummary | null>(null);
   const [currency, setCurrency] = useState(owner.reportingCurrency);
@@ -57,20 +58,16 @@ export function AccountsPage() {
   if (!accounts) {
     return <p className="muted">Loading accounts…</p>;
   }
-  if (accounts.length === 0) {
-    return (
-      <EmptyState title="No bank accounts">
-        Brokerage cash lives under Investments. Connect a bank from Connections. Trade Republic or Revolut there are cash accounts, not holdings.
-      </EmptyState>
-    );
-  }
 
   return (
+    <FeatureGate allowed={shellAccounts.length > 0}>
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <CurrencyTabs currencies={currencies} selected={currency} onSelect={setCurrency} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: hasInvestmentsNav(connections) ? "repeat(3,1fr)" : "repeat(2,1fr)", gap: 16 }}>
         <SummaryCard label="Total liquid cash" value={wealthRow ? formatAmount(wealthRow.liquidCash, currency, privacy) : "—"} />
-        <SummaryCard label="Investments" value={wealthRow ? formatAmount(wealthRow.investmentValue, currency, privacy) : "—"} />
+        {hasInvestmentsNav(connections) ? (
+          <SummaryCard label="Investments" value={wealthRow ? formatAmount(wealthRow.investmentValue, currency, privacy) : "—"} />
+        ) : null}
         <SummaryCard label="Net worth" value={wealthRow ? formatAmount(wealthRow.netWorth, currency, privacy) : "—"} />
       </div>
       <div className="card" style={{ overflow: "hidden" }}>
@@ -79,16 +76,14 @@ export function AccountsPage() {
             B
           </div>
           <div style={{ flex: 1 }}>
-            <span style={{ fontWeight: 600, fontSize: 14 }}>Bank accounts</span>
-            <span style={{ fontSize: 11.5, color: "var(--faint)", marginLeft: 10 }}>via Enable Banking · {currency}</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>Accounts</span>
+            <span style={{ fontSize: 11.5, color: "var(--faint)", marginLeft: 10 }}>{currency}</span>
           </div>
           <span className="mono" style={{ fontSize: 9.5, letterSpacing: ".08em", textTransform: "uppercase", color: tone.fg, border: `1px solid ${tone.bd}`, borderRadius: 4, padding: "3px 6px" }}>
             {tone.label}
           </span>
         </div>
-        {visible.length === 0 ? (
-          <p className="muted" style={{ padding: 20 }}>No {currency} accounts.</p>
-        ) : (
+        {visible.length === 0 ? null : (
           visible.map((account) => (
             <div
               key={account.id}
@@ -118,10 +113,8 @@ export function AccountsPage() {
           ))
         )}
       </div>
-      <div className="muted">
-        Balances are snapshots with a timestamp and currency, stored as fixed-precision decimals. Provider identifiers are kept separately from Worthly&apos;s own account model. Brokerage accounts are shown under Investments.
-      </div>
     </div>
+    </FeatureGate>
   );
 }
 
@@ -144,6 +137,8 @@ function accountType(type: string): string {
       return "Savings";
     case "CARD":
       return "Card";
+    case "BROKERAGE":
+      return "Brokerage";
     default:
       return type;
   }

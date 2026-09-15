@@ -8,7 +8,7 @@ import { ApiError, apiGet, apiSend } from "@/lib/api";
 import { AppDataContext } from "@/lib/app-data";
 import { formatInstant } from "@/lib/period";
 import { readPrivacy, writePrivacy } from "@/lib/privacy";
-import type { Category, Connection, Notification, Owner } from "@/lib/types";
+import type { Account, Category, Connection, Notification, Owner, TransactionPage } from "@/lib/types";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -16,6 +16,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [hasTransactions, setHasTransactions] = useState(false);
   const [privacy, setPrivacyState] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,15 +30,19 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     const nextOwner = await apiGet<Owner>("/me");
-    const [nextConnections, nextNotifications, nextCategories] = await Promise.all([
+    const [nextConnections, nextNotifications, nextCategories, nextAccounts, nextTx] = await Promise.all([
       apiGet<Connection[]>("/connections"),
       apiGet<Notification[]>("/notifications"),
       apiGet<Category[]>("/categories"),
+      apiGet<Account[]>("/accounts"),
+      apiGet<TransactionPage>("/transactions?size=1"),
     ]);
     setOwner(nextOwner);
     setConnections(nextConnections);
     setNotifications(nextNotifications);
     setCategories(nextCategories);
+    setAccounts(nextAccounts);
+    setHasTransactions(nextTx.total > 0);
     setError(null);
   }, []);
 
@@ -109,6 +115,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         connections,
         notifications,
         categories,
+        accounts,
+        hasTransactions,
         privacy,
         syncing,
         stamp,

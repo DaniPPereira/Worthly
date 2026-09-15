@@ -1,11 +1,13 @@
 import { createContext, useContext } from "react";
-import type { Category, Connection, Notification, Owner } from "@/lib/types";
+import type { Account, Category, Connection, Notification, Owner } from "@/lib/types";
 
 export type AppData = {
   owner: Owner;
   connections: Connection[];
   notifications: Notification[];
   categories: Category[];
+  accounts: Account[];
+  hasTransactions: boolean;
   privacy: boolean;
   syncing: boolean;
   stamp: string;
@@ -54,6 +56,16 @@ export function includesHoldings(connection: Connection): boolean {
     return true;
   }
   return connection.capabilities?.includes("POSITIONS") === true;
+}
+
+export function hasInvestmentsNav(connections: Connection[]): boolean {
+  return connections.some((connection) => includesHoldings(connection));
+}
+
+export function cashAccountCount(accounts: { currency: string; includedInLiquidCash: boolean; type: string }[], currency: string): number {
+  return accounts.filter(
+    (account) => account.currency === currency && (account.includedInLiquidCash || account.type === "BROKERAGE"),
+  ).length;
 }
 
 export function connectionLabel(connection: Connection): string {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { CurrencyTabs, EmptyState, MonthNav } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { connectionLabel, includesHoldings, isBank, useAppData } from "@/lib/app-data";
+import { cashAccountCount, connectionLabel, includesHoldings, isBank, useAppData } from "@/lib/app-data";
 import { areaPath, linePath, toChartNumber } from "@/lib/chart";
 import { addAmounts, formatAmount, formatRate, formatSignedAmount, isNegative } from "@/lib/money";
 import { formatDay, formatMonthLabel, monthDateRange, monthKeyInZone, monthKeysThrough } from "@/lib/period";
@@ -148,7 +148,7 @@ export function DashboardPage() {
   }, [categories, currency, expenses]);
 
   const maxCat = categoryRows[0]?.amount ?? "0";
-  const liquidAccounts = accounts.filter((account) => account.includedInLiquidCash && account.currency === currency);
+  const cashAccounts = cashAccountCount(accounts, currency);
   const reauthConnection = connections.find((connection) => connection.status === "REAUTH_REQUIRED");
   const hasBank = connections.some((connection) => isBank(connection));
   const showInvestments =
@@ -262,10 +262,7 @@ export function DashboardPage() {
             {formatAmount(cashAvailable, currency, privacy)}
           </div>
           <div style={{ fontSize: 12.5, color: "rgba(244,241,234,.62)", marginTop: 8 }}>
-            {liquidAccounts.length} liquid account{liquidAccounts.length === 1 ? "" : "s"}
-            {isNonZeroAmount(brokerageCash) ? " · includes investment cash" : ""}
-            {" · "}
-            {currency}
+            {cashAccounts} account{cashAccounts === 1 ? "" : "s"} · {currency}
           </div>
           <div style={{ display: "flex", gap: 28, marginTop: "auto", paddingTop: 22, borderTop: "1px solid rgba(244,241,234,.16)" }}>
             <div>
@@ -342,15 +339,12 @@ export function DashboardPage() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1.35fr", gap: 16 }}>
+        {categoryRows.length > 0 || hasBank ? (
         <div className="card" style={{ padding: 20 }}>
           <div className="label">Where it went · {formatMonthLabel(month)}</div>
           <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 13 }}>
             {categoryRows.length === 0 ? (
-              <p className="muted">
-                {hasBank
-                  ? `No expenses in ${currency} this month.`
-                  : "Connect a bank to import card and current-account purchases."}
-              </p>
+              hasBank ? <p className="muted">No expenses in {currency} this month.</p> : null
             ) : (
               categoryRows.map((row, index) => (
                 <Link
@@ -371,10 +365,14 @@ export function DashboardPage() {
               ))
             )}
           </div>
+          {categoryRows.length > 0 ? (
           <div className="muted" style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid rgba(19,26,25,.07)" }}>
             Click a category to see those expenses. Internal transfers are excluded. Bars are relative to the largest category in {currency}.
           </div>
+          ) : null}
         </div>
+        ) : null}
+        {(recent?.items ?? []).length > 0 ? (
         <div className="card" style={{ padding: "20px 20px 8px" }}>
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
             <div className="label">Recent movements</div>
@@ -383,10 +381,7 @@ export function DashboardPage() {
             </Link>
           </div>
           <div style={{ marginTop: 12 }}>
-            {(recent?.items ?? []).length === 0 ? (
-              <p className="muted">No transactions imported yet.</p>
-            ) : (
-              (recent?.items ?? []).map((tx) => {
+            {(recent?.items ?? []).map((tx) => {
                 const category = categories.find((item) => item.id === tx.categoryId);
                 const credit = tx.direction === "CREDIT";
                 return (
@@ -421,10 +416,10 @@ export function DashboardPage() {
                     </span>
                   </Link>
                 );
-              })
-            )}
+              })}
           </div>
         </div>
+        ) : null}
       </div>
     </div>
   );

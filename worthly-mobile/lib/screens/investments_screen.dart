@@ -131,15 +131,7 @@ class _InvestmentsScreenState extends ConsumerState<InvestmentsScreen> {
     final currency = _currency!;
     final row = _summary!.totalsByCurrency.where((item) => item.currency == currency).firstOrNull;
     if (row == null) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
-        children: const [
-          EmptyState(
-            title: 'No brokerage data',
-            body: 'Trading 212 appears here after a read-only key is configured on the server. Worthly cannot place orders.',
-          ),
-        ],
-      );
+      return const SizedBox.shrink();
     }
     final visible = _positions.where((item) => item.marketValue?.currency == currency).toList();
     var portfolio = BigInt.zero;

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CurrencyTabs, EmptyState, LoadMore, Pager } from "@/components/ui/Primitives";
+import { FeatureGate } from "@/components/shell/FeatureGate";
+import { CurrencyTabs, LoadMore, Pager } from "@/components/ui/Primitives";
 import { apiGet } from "@/lib/api";
-import { includesHoldings, isBank, useAppData } from "@/lib/app-data";
+import { hasInvestmentsNav, useAppData } from "@/lib/app-data";
 import { compareAmountDesc, formatAmount, formatSignedAmount, groupByCurrency, weightPercent } from "@/lib/money";
 import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
 import type { InvestmentSummary, Position, Transaction, TransactionPage } from "@/lib/types";
@@ -137,31 +138,10 @@ export function InvestmentsPage() {
   if (!summary) {
     return <p className="muted">Loading investments…</p>;
   }
-  if (!row) {
-    const cashOnlyBrokers = connections.filter(
-      (connection) =>
-        isBank(connection) &&
-        connection.status !== "DISABLED" &&
-        (connection.brand === "TRADE_REPUBLIC" || connection.brand === "REVOLUT") &&
-        !includesHoldings(connection),
-    );
-    const names = [
-      ...new Set(
-        cashOnlyBrokers
-          .map((connection) => connection.institutionName)
-          .filter((name): name is string => typeof name === "string" && name.length > 0),
-      ),
-    ];
-    return (
-      <EmptyState title="No brokerage data">
-        {names.length > 0
-          ? `${names.join(" and ")} ${names.length === 1 ? "is" : "are"} connected as a bank. Open Banking does not include holdings. Connect a brokerage with an official API from Connections.`
-          : "Connect a brokerage from Connections to see holdings here. A bank connection, including Trade Republic or Revolut, is cash only. Worthly cannot place orders."}
-      </EmptyState>
-    );
-  }
 
   return (
+    <FeatureGate allowed={hasInvestmentsNav(connections)}>
+      {row ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <CurrencyTabs currencies={currencies} selected={currency} onSelect={onCurrency} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 16 }}>
@@ -298,6 +278,8 @@ export function InvestmentsPage() {
         </div>
       </div>
     </div>
+      ) : null}
+    </FeatureGate>
   );
 }
 

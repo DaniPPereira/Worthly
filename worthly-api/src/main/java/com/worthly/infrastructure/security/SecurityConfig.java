@@ -79,7 +79,9 @@ public class SecurityConfig {
             throws Exception {
         http.securityMatcher("/api/**")
                 .authorizeHttpRequests(auth -> auth.requestMatchers(
-                                "/api/v1/register", "/api/v1/connections/enable-banking/callback")
+                                "/api/v1/register",
+                                "/api/v1/auth/login",
+                                "/api/v1/connections/enable-banking/callback")
                         .permitAll()
                         .anyRequest()
                         .authenticated())
@@ -166,6 +168,7 @@ public class SecurityConfig {
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                .authorizationGrantType(NativeLoginService.GRANT_TYPE)
                 .redirectUris(uris -> uris.addAll(properties.getOauth().getMobileRedirectUris()))
                 .scope(OidcScopes.OPENID)
                 .scope(OidcScopes.PROFILE)

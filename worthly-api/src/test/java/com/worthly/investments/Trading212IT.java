@@ -165,8 +165,8 @@ class Trading212IT extends AbstractIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andReturn();
-        assertThat(objectMapper.readTree(accounts.getResponse().getContentAsString()).toString())
-                .doesNotContain("BROKERAGE");
+        JsonNode accountList = objectMapper.readTree(accounts.getResponse().getContentAsString());
+        assertThat(accountList.toString()).contains("BROKERAGE");
 
         UUID bank = connectBank(token);
         mockMvc.perform(MockMvcRequestBuilders.post("/api/v1/connections/" + bank + "/sync")

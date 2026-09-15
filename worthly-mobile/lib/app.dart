@@ -49,7 +49,7 @@ class _WorthlyAppState extends ConsumerState<WorthlyApp> with WidgetsBindingObse
     }
     if (uri.host == 'connections' && uri.path.contains('result')) {
       ref.read(connectionResultProvider.notifier).state = uri.queryParameters['status'];
-      ref.read(tabIndexProvider.notifier).state = 3;
+      ref.read(categoriesOpenProvider.notifier).state = false;
       ref.read(connectionsOpenProvider.notifier).state = true;
       ref.invalidate(shellDataProvider);
     }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { RisingW } from "@/components/brand/RisingW";
 import {
   connectionLabel,
+  hasInvestmentsNav,
   ownerInitial,
   ownerLabel,
   statusTone,
@@ -79,10 +80,25 @@ function NavIcon({ label }: { label: string }) {
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { owner, connections } = useAppData();
+  const { owner, connections, accounts, hasTransactions } = useAppData();
   const reauthCount = connections.filter(
     (item) => item.status === "REAUTH_REQUIRED" || item.status === "CONFIGURATION_REQUIRED",
   ).length;
+  const showInvestments = hasInvestmentsNav(connections);
+  const showAccounts = accounts.length > 0;
+  const showTransactions = hasTransactions;
+  const nav = NAV.filter((item) => {
+    if (item.href === "/investments") {
+      return showInvestments;
+    }
+    if (item.href === "/accounts") {
+      return showAccounts;
+    }
+    if (item.href === "/transactions") {
+      return showTransactions;
+    }
+    return true;
+  });
 
   return (
     <aside
@@ -104,7 +120,7 @@ export function Sidebar() {
         <div style={{ font: "600 19px/1 var(--font-sans)", color: "var(--cream)", letterSpacing: "-.03em" }}>Worthly</div>
       </div>
       <nav>
-        {NAV.map((item) => {
+        {nav.map((item) => {
           const active = item.match(pathname);
           const badge = item.label === "Connections" && reauthCount > 0 ? String(reauthCount) : null;
           return (
@@ -147,6 +163,7 @@ export function Sidebar() {
           );
         })}
       </nav>
+      {connections.length > 0 ? (
       <div style={{ marginTop: "auto", padding: "14px 11px 10px", borderTop: "1px solid rgba(244,241,234,.13)" }}>
         <div
           className="mono"
@@ -160,10 +177,7 @@ export function Sidebar() {
         >
           Providers
         </div>
-        {connections.length === 0 ? (
-          <div style={{ marginTop: 9, fontSize: 12, color: "rgba(244,241,234,.66)" }}>None connected</div>
-        ) : (
-          connections.map((connection) => {
+        {connections.map((connection) => {
             const tone = statusTone(connection.status);
             return (
               <div key={connection.id} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
@@ -174,9 +188,11 @@ export function Sidebar() {
                 </span>
               </div>
             );
-          })
-        )}
+          })}
       </div>
+      ) : (
+        <div style={{ marginTop: "auto" }} />
+      )}
       <div
         style={{
           padding: "12px 11px 0",

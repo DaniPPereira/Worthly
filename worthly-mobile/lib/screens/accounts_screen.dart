@@ -72,12 +72,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       return const LoadingBody();
     }
     if (_accounts!.isEmpty) {
-      return ListView(
-        padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
-        children: const [
-          EmptyState(title: 'No bank accounts', body: 'Brokerage cash lives under Investments. Connect Santander or Revolut from Connections.'),
-        ],
-      );
+      return const SizedBox.shrink();
     }
     final currency = _currency!;
     final visible = _accounts!.where((item) => item.account.currency == currency).toList();
@@ -120,13 +115,7 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(_providerName(entry.key, connections), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
-                          Text(_providerMeta(entry.key), style: const TextStyle(fontSize: 11, color: WorthlyColors.faint)),
-                        ],
-                      ),
+                      child: Text(_providerName(entry.key, connections), style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
                     ),
                     StatusChip(status: _providerStatus(entry.key, connections)),
                   ],
@@ -169,7 +158,10 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
           const SizedBox(height: 12),
         ],
         InkWell(
-          onTap: () => ref.read(connectionsOpenProvider.notifier).state = true,
+          onTap: () {
+            ref.read(categoriesOpenProvider.notifier).state = false;
+            ref.read(connectionsOpenProvider.notifier).state = true;
+          },
           borderRadius: BorderRadius.circular(14),
           child: Container(
             width: double.infinity,
@@ -196,10 +188,6 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
       return 'Trading 212';
     }
     return connections.where((item) => item.provider == provider).map((item) => item.label).firstOrNull ?? provider;
-  }
-
-  String _providerMeta(String provider) {
-    return provider == 'TRADING_212' ? 'Public API · read-only key' : 'Enable Banking · AIS';
   }
 
   String _providerStatus(String provider, List<Connection> connections) {

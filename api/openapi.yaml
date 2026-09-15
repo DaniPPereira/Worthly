@@ -34,8 +34,8 @@ paths:
       security: []
       description: |
         Creates an isolated user. Does not issue tokens. The caller then
-        signs in through OAuth. Duplicate email is 409 `email_taken`.
-        Password minimum length is 8 characters. Name is required.
+        signs in through OAuth or POST /auth/login. Duplicate email is 409
+        `email_taken`. Password minimum length is 8 characters. Name is required.
       requestBody:
         required: true
         content:
@@ -50,6 +50,29 @@ paths:
         '400': {$ref: '#/components/responses/BadRequest'}
         '403': {$ref: '#/components/responses/Forbidden'}
         '409': {$ref: '#/components/responses/Conflict'}
+  /auth/login:
+    post:
+      tags: [Identity]
+      operationId: nativeLogin
+      security: []
+      description: |
+        Native app sign-in. Verifies email and password, then optional TOTP,
+        and issues the same access and refresh tokens as the mobile OAuth
+        client. Does not open a browser. `totp_required` means send the same
+        body again with `totpCode`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/NativeLoginRequest'}
+      responses:
+        '200':
+          description: Tokens issued
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/NativeTokenResponse'}
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
   /me:
     get:
       tags: [Identity]
@@ -782,6 +805,23 @@ components:
           type: string
           maxLength: 128
           description: Required when the API is configured with an invite code.
+    NativeLoginRequest:
+      type: object
+      required: [email, password]
+      additionalProperties: false
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 1, maxLength: 128}
+        totpCode: {type: string, maxLength: 32}
+    NativeTokenResponse:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token: {type: string}
+        refresh_token: {type: string}
+        token_type: {type: string, example: Bearer}
+        expires_in: {type: integer}
+        scope: {type: string}
     DeleteAccountRequest:
       type: object
       required: [confirm]

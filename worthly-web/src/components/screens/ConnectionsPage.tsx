@@ -2,13 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { EmptyState } from "@/components/ui/Primitives";
 import { ApiError, apiGet, apiSend } from "@/lib/api";
 import { connectionLabel, includesHoldings, isBank, isBroker, statusTone, useAppData } from "@/lib/app-data";
 import { formatInstant } from "@/lib/period";
-import type { BankChoice, CatalogEntry, Connection, ConnectionCatalog, SyncRun, SyncRunPage } from "@/lib/types";
-
-type LogRow = SyncRun & { provider: string };
+import type { BankChoice, Connection, ConnectionCatalog } from "@/lib/types";
 
 const TRADING_212_KEY_HELP =
   "https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key";
@@ -17,9 +14,7 @@ export function ConnectionsPage() {
   const { connections, refresh, syncing, owner } = useAppData();
   const searchParams = useSearchParams();
   const [banks, setBanks] = useState<BankChoice[]>([]);
-  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
-  const [banksError, setBanksError] = useState<string | null>(null);
-  const [log, setLog] = useState<LogRow[]>([]);
+  const [catalog, setCatalog] = useState<ConnectionCatalog["items"]>([]);
   const [handoff, setHandoff] = useState<Connection | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmPurge, setConfirmPurge] = useState<Connection | null>(null);
@@ -31,40 +26,12 @@ export function ConnectionsPage() {
 
   useEffect(() => {
     void apiGet<BankChoice[]>("/connections/banks?country=PT")
-      .then((list) => {
-        setBanks(list);
-        setBanksError(null);
-      })
-      .catch((err: unknown) => {
-        setBanks([]);
-        setBanksError(err instanceof ApiError ? err.message : "provider_error");
-      });
+      .then((list) => setBanks(list))
+      .catch(() => setBanks([]));
     void apiGet<ConnectionCatalog>("/connections/catalog?country=PT")
       .then((page) => setCatalog(page.items))
       .catch(() => setCatalog([]));
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.all(
-      connections.map(async (connection) => {
-        try {
-          const page = await apiGet<SyncRunPage>(`/connections/${connection.id}/sync-runs?size=5`);
-          return page.items.map((item) => ({ ...item, provider: connectionLabel(connection) }));
-        } catch {
-          return [] as LogRow[];
-        }
-      }),
-    ).then((pages) => {
-      if (cancelled) {
-        return;
-      }
-      setLog(pages.flat().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [connections]);
 
   async function authorize(name: string, country: string) {
     setAuthError(null);
@@ -163,14 +130,12 @@ export function ConnectionsPage() {
     );
     return banks.filter((bank) => !names.has(bank.name));
   }, [banks, connections]);
-  const hasBrokerage = connections.some((item) => isBroker(item) && item.status !== "DISABLED");
   const connectableBrokers = catalog.filter(
     (item) =>
       item.kind === "BROKER" &&
       item.connectable &&
       !connections.some((connection) => connection.provider === item.provider && connection.status !== "DISABLED"),
   );
-  const unavailableHoldings = catalog.filter((item) => item.kind === "BROKER" && !item.connectable);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -189,9 +154,7 @@ export function ConnectionsPage() {
           {syncError}
         </div>
       ) : null}
-      {connections.length === 0 ? (
-        <EmptyState title="No providers yet">Connect a bank or a brokerage from the sections below.</EmptyState>
-      ) : (
+      {connections.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 16 }}>
           {connections.map((connection) => (
             <ConnectionCard
@@ -215,103 +178,40 @@ export function ConnectionsPage() {
             />
           ))}
         </div>
-      )}
-      <div className="card" style={{ padding: 20 }}>
-        <div className="label">Connect a bank</div>
-        {unusedBanks.length > 0 ? (
-          <>
-            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-              {unusedBanks.map((bank) => (
-                <button key={`${bank.country}-${bank.name}`} type="button" className="btn btn-primary" onClick={() => void authorize(bank.name, bank.country)}>
-                  Connect {bank.name}
-                </button>
-              ))}
-            </div>
-            {authError ? <p style={{ color: "var(--loss)", fontSize: 13, marginTop: 10, maxWidth: 640 }}>{authError}</p> : null}
-            <p className="muted" style={{ marginTop: 12 }}>
-              Open Banking imports cash and card payments. Trade Republic and Revolut connected here are bank accounts,
-              not investment portfolios.
-            </p>
-          </>
-        ) : banksError === "configuration_required" ? (
-          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
-            Banks are added through Enable Banking (Open Banking). This server has no Enable Banking application yet, so
-            the bank buttons cannot appear. Create an app at enablebanking.com, put its application ID and RSA private
-            key on the API, restart Worthly, then refresh this page. You still log in at the bank — Worthly never sees
-            that password.
-          </p>
-        ) : banksError ? (
-          <p className="muted" style={{ marginTop: 12 }}>
-            Banks could not be loaded ({banksError.replaceAll("_", " ")}). Try again after the API can reach Enable Banking.
-          </p>
-        ) : banks.length === 0 ? (
-          <p className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
-            Enable Banking is configured, but this app did not return a supported bank for Portugal. Real Santander,
-            Revolut and Trade Republic need those ASPSPs enabled on the Production Enable Banking application.
-          </p>
-        ) : (
-          <p className="muted" style={{ marginTop: 12 }}>All supported banks are already connected.</p>
-        )}
-      </div>
-      <div className="card" style={{ padding: 20 }}>
-        <div className="label">Connect a brokerage</div>
-        <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-          {connectableBrokers.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => {
-                    setT212Error(null);
-                    setT212Open(true);
-                  }}
-                >
-                  Connect {item.name}
-                </button>
-              ))}
+      ) : null}
+      {unusedBanks.length > 0 ? (
+        <div className="card" style={{ padding: 20 }}>
+          <div className="label">Connect a bank</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+            {unusedBanks.map((bank) => (
+              <button key={`${bank.country}-${bank.name}`} type="button" className="btn btn-primary" onClick={() => void authorize(bank.name, bank.country)}>
+                Connect {bank.name}
+              </button>
+            ))}
+          </div>
+          {authError ? <p style={{ color: "var(--loss)", fontSize: 13, marginTop: 10, maxWidth: 640 }}>{authError}</p> : null}
         </div>
-        {unavailableHoldings.map((item) => (
-          <p key={item.id} className="muted" style={{ marginTop: 12, maxWidth: 640 }}>
-            {item.name} cannot be connected yet. {item.dataScope}
-          </p>
-        ))}
-        {hasBrokerage && unavailableHoldings.length === 0 ? (
-          <p className="muted" style={{ marginTop: 12 }}>A brokerage with holdings is already connected.</p>
-        ) : null}
-      </div>
-      <div className="card" style={{ padding: "20px 20px 8px" }}>
-        <div className="label">Synchronization log</div>
-        {log.length === 0 ? (
-          <p className="muted" style={{ marginTop: 12 }}>No sync runs yet.</p>
-        ) : (
-          log.map((row) => (
-            <div
-              key={row.id}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "150px 190px 1fr 120px",
-                gap: 14,
-                padding: "11px 0",
-                borderTop: "1px solid rgba(19,26,25,.06)",
-                marginTop: 8,
-                alignItems: "center",
-              }}
-            >
-              <span className="mono" style={{ fontSize: 12, color: "var(--faint)" }}>
-                {formatInstant(row.startedAt, owner.reportingTimezone)}
-              </span>
-              <span style={{ fontWeight: 500, fontSize: 12.5 }}>{row.provider}</span>
-              <span style={{ fontSize: 12, color: "#5E6A67" }}>{detailFor(row)}</span>
-              <span className="mono" style={{ textAlign: "right", fontSize: 9.5, letterSpacing: ".08em", textTransform: "uppercase", color: outcomeColor(row.status) }}>
-                {row.status}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-      <div className="muted">
-        Disconnecting stops future sync. Purging deletes locally stored provider data for that connection. Your own categories, notes and transfer matches are kept.
-      </div>
+      ) : null}
+      {connectableBrokers.length > 0 ? (
+        <div className="card" style={{ padding: 20 }}>
+          <div className="label">Connect a brokerage</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+            {connectableBrokers.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setT212Error(null);
+                  setT212Open(true);
+                }}
+              >
+                Connect {item.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {t212Open ? (
         <Trading212Modal
           busy={busyId === "trading-212"}
@@ -403,7 +303,6 @@ function ConnectionCard({
   const needsAuth = connection.status === "REAUTH_REQUIRED";
   const healthy = connection.status === "ACTIVE";
   const initial = name.slice(0, 1).toUpperCase();
-  const accessLine = bank ? "Open Banking · cash and cards" : "Brokerage API · holdings";
   return (
     <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", borderColor: needsAuth ? "rgba(138,100,18,.35)" : undefined }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
@@ -412,9 +311,6 @@ function ConnectionCard({
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 14 }}>{name}</div>
-          <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 1 }}>
-            {accessLine}
-          </div>
         </div>
       </div>
       <span className="mono" style={{ alignSelf: "flex-start", marginTop: 14, fontSize: 9.5, letterSpacing: ".08em", textTransform: "uppercase", color: tone.fg, background: tone.bg, borderRadius: 5, padding: "4px 7px" }}>
@@ -427,10 +323,7 @@ function ConnectionCard({
           v={connection.consentExpiresAt ? formatInstant(connection.consentExpiresAt, timezone) : bank ? "—" : "Encrypted on server"}
           warn={needsAuth || connection.status === "CONFIGURATION_REQUIRED"}
         />
-        <Row k="Includes" v={includesHoldings(connection) ? "Holdings" : "Cash only"} />
-        {connection.dataScope ? (
-          <div style={{ fontSize: 11.5, lineHeight: 1.45, color: "#5E6A67" }}>{connection.dataScope}</div>
-        ) : null}
+        <Row k="Includes" v={includesHoldings(connection) ? "Holdings" : "Cash"} />
         {connection.lastErrorCode ? (
           <Row k="Last error" v={connection.lastErrorCode.replaceAll("_", " ")} warn />
         ) : null}
@@ -501,28 +394,6 @@ function consentLabel(connection: Connection): string {
     return "Consent expired";
   }
   return "Consent expires";
-}
-
-function detailFor(row: SyncRun): string {
-  if (row.errorCode) {
-    return row.errorCode.replaceAll("_", " ");
-  }
-  const imported = row.importedCount ?? 0;
-  const updated = row.updatedCount ?? 0;
-  return `${imported} imported · ${updated} updated`;
-}
-
-function outcomeColor(status: string): string {
-  if (status === "SUCCEEDED") {
-    return "var(--gain)";
-  }
-  if (status === "RATE_LIMITED") {
-    return "var(--faint)";
-  }
-  if (status === "FAILED") {
-    return "var(--loss)";
-  }
-  return "var(--warn)";
 }
 
 function Trading212Modal({

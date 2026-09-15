@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TransactionDrawer } from "@/components/screens/TransactionDrawer";
+import { FeatureGate } from "@/components/shell/FeatureGate";
 import { EmptyState, Pager } from "@/components/ui/Primitives";
 import { apiGet, downloadCsv } from "@/lib/api";
-import { isBank, useAppData } from "@/lib/app-data";
+import { useAppData } from "@/lib/app-data";
 import { formatAmount, formatSignedAmount } from "@/lib/money";
 import { formatDay, monthDateRange, monthKeyInZone, shiftMonthKey } from "@/lib/period";
 import { transactionsHref } from "@/lib/transactions-href";
@@ -34,7 +36,7 @@ function queryFor(filter: Filter, uncategorizedId: string | undefined, categoryI
 }
 
 export function TransactionsPage() {
-  const { owner, privacy, categories, connections } = useAppData();
+  const { owner, privacy, categories, hasTransactions } = useAppData();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<Filter>("All");
@@ -186,6 +188,7 @@ export function TransactionsPage() {
   }
 
   return (
+    <FeatureGate allowed={hasTransactions}>
     <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <label style={{ flex: "1 1 220px", minWidth: 0, background: "#fff", border: "1px solid rgba(19,26,25,.11)", borderRadius: 10, padding: "10px 13px", display: "flex", alignItems: "center", gap: 10 }}>
@@ -229,6 +232,9 @@ export function TransactionsPage() {
         <button type="button" className="btn btn-ghost" style={{ height: 40 }} onClick={() => void exportCsv()}>
           Export CSV
         </button>
+        <Link href="/categories" className="btn btn-ghost" style={{ height: 40, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+          Categories
+        </Link>
       </div>
       {exportError ? <p style={{ color: "var(--loss)", fontSize: 13, margin: 0 }}>{exportError}</p> : null}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -283,11 +289,7 @@ export function TransactionsPage() {
       {!page ? (
         <p className="muted">Loading transactions…</p>
       ) : page.items.length === 0 ? (
-        <EmptyState title="No transactions in this view">
-          {connections.some((connection) => isBank(connection))
-            ? "Try another filter, date range, or wait for the next successful sync."
-            : "Connect a bank from Connections to import card and account purchases. Brokerage activity stays under Investments."}
-        </EmptyState>
+        <EmptyState title="No transactions in this view">Try another filter or date range.</EmptyState>
       ) : (
         <div className="card" style={{ overflow: "hidden", borderRadius: 14 }}>
           <div
@@ -406,7 +408,7 @@ export function TransactionsPage() {
           />
         </div>
       )}
-      <div className="muted">Card purchases can take days to settle — pending rows may change amount or disappear. Nothing here is real-time.</div>
+      <div className="muted">Card purchases can take days to settle — pending rows may change amount or disappear.</div>
       {openTx ? (
         <TransactionDrawer
           transaction={openTx}
@@ -426,6 +428,7 @@ export function TransactionsPage() {
         />
       ) : null}
     </div>
+    </FeatureGate>
   );
 }
 

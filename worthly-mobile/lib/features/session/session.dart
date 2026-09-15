@@ -1,5 +1,4 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:worthly_mobile/api/models.dart';
@@ -157,21 +156,17 @@ class SessionController extends Notifier<SessionState> {
     }
   }
 
-  Future<void> signIn() async {
-    final auth = ref.read(authRepositoryProvider);
-    _externalFlow = true;
+  Future<void> signIn({required String email, required String password, String? totpCode}) async {
     try {
-      final url = auth.startLogin();
-      final result = await FlutterWebAuth2.authenticate(
-        url: url.toString(),
-        callbackUrlScheme: AuthConfig.local.callbackScheme,
-      );
-      await auth.completeLogin(Uri.parse(result));
+      await ref.read(authRepositoryProvider).passwordLogin(email: email, password: password, totpCode: totpCode);
       await _loadOwner();
+    } on AuthFailure catch (failure) {
+      if (failure.code != 'totp_required' && failure.code != 'totp_invalid') {
+        state = const SessionState(phase: SessionPhase.signedOut, error: 'Check your email and password.');
+      }
+      rethrow;
     } catch (_) {
       state = const SessionState(phase: SessionPhase.signedOut, error: 'Sign-in did not complete.');
-    } finally {
-      _externalFlow = false;
     }
   }
 

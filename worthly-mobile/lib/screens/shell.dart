@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:worthly_mobile/features/session/session.dart';
-import 'package:worthly_mobile/features/session/shell_data.dart';
 import 'package:worthly_mobile/screens/accounts_screen.dart';
+import 'package:worthly_mobile/screens/categories_screen.dart';
 import 'package:worthly_mobile/screens/connections_screen.dart';
 import 'package:worthly_mobile/screens/home_screen.dart';
 import 'package:worthly_mobile/screens/investments_screen.dart';
 import 'package:worthly_mobile/screens/settings_screen.dart';
 import 'package:worthly_mobile/screens/transactions_screen.dart';
+import 'package:worthly_mobile/features/session/session.dart';
+import 'package:worthly_mobile/features/session/shell_data.dart';
 import 'package:worthly_mobile/theme/colors.dart';
 import 'package:worthly_mobile/widgets/ui.dart';
 
@@ -20,9 +21,37 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(tabIndexProvider);
     final connectionsOpen = ref.watch(connectionsOpenProvider);
+    final categoriesOpen = ref.watch(categoriesOpenProvider);
     final privacy = ref.watch(privacyProvider);
     final syncing = ref.watch(sessionProvider).syncing;
-    final title = connectionsOpen && tab == 3 ? 'Connections' : _titles[tab];
+    final shell = ref.watch(shellDataProvider).asData?.value;
+    final showTransactions = shell?.showTransactions ?? false;
+    final showInvestments = shell?.showInvestments ?? false;
+    final showAccounts = shell?.showAccounts ?? false;
+    final overlayIndex = connectionsOpen
+        ? 5
+        : categoriesOpen
+            ? 6
+            : tab;
+    ref.listen(shellDataProvider, (previous, next) {
+      final data = next.asData?.value;
+      if (data == null) {
+        return;
+      }
+      final current = ref.read(tabIndexProvider);
+      if (current == 1 && !data.showTransactions) {
+        ref.read(tabIndexProvider.notifier).state = 0;
+      } else if (current == 2 && !data.showInvestments) {
+        ref.read(tabIndexProvider.notifier).state = 0;
+      } else if (current == 3 && !data.showAccounts && !ref.read(connectionsOpenProvider)) {
+        ref.read(tabIndexProvider.notifier).state = 0;
+      }
+    });
+    final title = connectionsOpen
+        ? 'Connections'
+        : categoriesOpen
+            ? 'Categories'
+            : _titles[tab];
     return Scaffold(
       backgroundColor: WorthlyColors.paper,
       body: Column(
@@ -64,7 +93,7 @@ class AppShell extends ConsumerWidget {
           ),
           Expanded(
             child: IndexedStack(
-              index: connectionsOpen && tab == 3 ? 5 : tab,
+              index: overlayIndex,
               children: const [
                 HomeScreen(),
                 TransactionsScreen(),
@@ -72,6 +101,7 @@ class AppShell extends ConsumerWidget {
                 AccountsScreen(),
                 SettingsScreen(),
                 ConnectionsScreen(),
+                CategoriesScreen(),
               ],
             ),
           ),
@@ -85,11 +115,14 @@ class AppShell extends ConsumerWidget {
               top: false,
               child: Row(
                 children: [
-                  _TabButton(icon: Icons.home_outlined, label: 'Home', selected: tab == 0, onTap: () => _go(ref, 0)),
-                  _TabButton(icon: Icons.swap_horiz, label: 'Transactions', selected: tab == 1, onTap: () => _go(ref, 1)),
-                  _TabButton(icon: Icons.show_chart, label: 'Investments', selected: tab == 2, onTap: () => _go(ref, 2)),
-                  _TabButton(icon: Icons.credit_card_outlined, label: 'Accounts', selected: tab == 3, onTap: () => _go(ref, 3, keepConnections: connectionsOpen)),
-                  _TabButton(icon: Icons.settings_outlined, label: 'Settings', selected: tab == 4, onTap: () => _go(ref, 4)),
+                  _TabButton(icon: Icons.home_outlined, label: 'Home', selected: tab == 0 && !connectionsOpen && !categoriesOpen, onTap: () => _go(ref, 0)),
+                  if (showTransactions)
+                    _TabButton(icon: Icons.swap_horiz, label: 'Transactions', selected: tab == 1 && !connectionsOpen && !categoriesOpen, onTap: () => _go(ref, 1)),
+                  if (showInvestments)
+                    _TabButton(icon: Icons.show_chart, label: 'Investments', selected: tab == 2 && !connectionsOpen && !categoriesOpen, onTap: () => _go(ref, 2)),
+                  if (showAccounts)
+                    _TabButton(icon: Icons.credit_card_outlined, label: 'Accounts', selected: tab == 3 && !connectionsOpen, onTap: () => _go(ref, 3, keepConnections: connectionsOpen)),
+                  _TabButton(icon: Icons.settings_outlined, label: 'Settings', selected: tab == 4 && !connectionsOpen && !categoriesOpen, onTap: () => _go(ref, 4)),
                 ],
               ),
             ),
@@ -104,6 +137,7 @@ class AppShell extends ConsumerWidget {
     if (index != 3 || !keepConnections) {
       ref.read(connectionsOpenProvider.notifier).state = false;
     }
+    ref.read(categoriesOpenProvider.notifier).state = false;
   }
 }
 

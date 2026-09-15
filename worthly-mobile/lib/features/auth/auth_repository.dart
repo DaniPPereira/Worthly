@@ -12,6 +12,15 @@ class AuthSession {
   final String refreshToken;
 }
 
+class AuthFailure implements Exception {
+  const AuthFailure(this.code);
+
+  final String code;
+
+  @override
+  String toString() => code;
+}
+
 class AuthRepository {
   AuthRepository({
     required SecureStorage storage,
@@ -38,6 +47,29 @@ class AuthRepository {
 
   String? get accessToken => _accessToken;
   bool get hasSession => _accessToken != null;
+
+  Future<AuthSession> passwordLogin({
+    required String email,
+    required String password,
+    String? totpCode,
+  }) async {
+    final body = <String, String>{'email': email, 'password': password};
+    if (totpCode != null && totpCode.isNotEmpty) {
+      body['totpCode'] = totpCode;
+    }
+    final response = await _http.post(
+      Uri.parse('${_config.apiUrl}/api/v1/auth/login'),
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode == 401) {
+      throw AuthFailure(_problemCode(response));
+    }
+    if (response.statusCode >= 400) {
+      throw const AuthFailure('request_failed');
+    }
+    return _storeTokens(response);
+  }
 
   Uri startLogin() {
     final pair = _pkce.generate();
@@ -136,7 +168,7 @@ class AuthRepository {
     final json = jsonDecode(response.body) as Map<String, dynamic>;
     final access = json['access_token'] as String?;
     final refresh = json['refresh_token'] as String?;
-    final expires = json['expires_in'] as int? ?? 600;
+    final expires = (json['expires_in'] as num?)?.toInt() ?? 600;
     if (access == null || refresh == null) {
       throw StateError('token_exchange_failed');
     }
@@ -168,4 +200,19 @@ class AuthRepository {
       await _storage.delete(key: _refreshKey);
     }
   }
+}
+
+String _problemCode(http.Response response) {
+  try {
+    final json = jsonDecode(response.body);
+    if (json is Map<String, dynamic>) {
+      final detail = json['detail'];
+      if (detail is String && detail.isNotEmpty && !detail.contains(' ')) {
+        return detail;
+      }
+    }
+  } catch (_) {
+    /* fall through */
+  }
+  return 'invalid_credentials';
 }

@@ -19,8 +19,6 @@ class ConnectionsScreen extends ConsumerStatefulWidget {
 
 class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
   List<BankChoice> _banks = [];
-  String? _banksError;
-  List<_LogRow> _log = [];
   Connection? _handoff;
   Connection? _purge;
   String? _busyId;
@@ -43,34 +41,14 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
       if (mounted) {
         setState(() {
           _banks = banks;
-          _banksError = null;
         });
       }
-    } catch (err) {
+    } catch (_) {
       if (mounted) {
         setState(() {
           _banks = [];
-          _banksError = err is StateError ? err.message : 'provider_error';
         });
       }
-    }
-    await _loadLog();
-  }
-
-  Future<void> _loadLog() async {
-    final connections = ref.read(shellDataProvider).asData?.value.connections ?? [];
-    final rows = <_LogRow>[];
-    for (final connection in connections) {
-      try {
-        final page = await ref.read(worthlyClientProvider).get('/connections/${connection.id}/sync-runs?size=5', parseSyncRuns);
-        rows.addAll(page.items.map((item) => _LogRow(run: item, provider: connection.label)));
-      } catch (_) {
-        /* keep other rows */
-      }
-    }
-    rows.sort((a, b) => b.run.startedAt.compareTo(a.run.startedAt));
-    if (mounted) {
-      setState(() => _log = rows.take(8).toList());
     }
   }
 
@@ -110,7 +88,6 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
     try {
       await ref.read(worthlyClientProvider).send('POST', '/connections/${connection.id}/sync');
       ref.invalidate(shellDataProvider);
-      await _loadLog();
     } catch (_) {
       if (mounted) {
         setState(() {
@@ -207,7 +184,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
             TextButton.icon(
               onPressed: () => ref.read(connectionsOpenProvider.notifier).state = false,
               icon: const Icon(Icons.chevron_left, size: 18),
-              label: const Text('Accounts', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
+              label: const Text('Back', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5)),
               style: TextButton.styleFrom(foregroundColor: WorthlyColors.pine, alignment: Alignment.centerLeft),
             ),
             if (result == 'ok')
@@ -231,12 +208,7 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                 textColor: const Color(0xFF6E5A2E),
                 text: _syncError!,
               ),
-            if (connections.isEmpty)
-              const EmptyState(
-                title: 'No providers yet',
-                body: 'Connect a bank or Trading 212 from the section below.',
-              )
-            else
+            if (connections.isNotEmpty)
               for (final connection in connections) ...[
                 _ConnectionCard(
                   connection: connection,
@@ -257,13 +229,13 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                 ),
                 const SizedBox(height: 12),
               ],
-            WorthlyCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('CONNECT A BANK', style: labelStyle()),
-                  const SizedBox(height: 14),
-                  if (unused.isNotEmpty || !hasTrading212)
+            if (unused.isNotEmpty) ...[
+              WorthlyCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CONNECT A BANK', style: labelStyle()),
+                    const SizedBox(height: 14),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -274,89 +246,37 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
                             style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
                             child: Text('Connect ${bank.name}'),
                           ),
-                        if (!hasTrading212)
-                          FilledButton(
-                            onPressed: () => setState(() {
-                              _t212Error = null;
-                              _t212Open = true;
-                            }),
-                            style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
-                            child: const Text('Connect Trading 212'),
-                          ),
                       ],
-                    )
-                  else if (_banksError == 'configuration_required')
-                    const Text(
-                      'Santander and Revolut need an Enable Banking app on this server (application ID and RSA private key). Until that is configured, bank buttons cannot appear. You still log in at the bank — Worthly never sees that password.',
-                      style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
-                    )
-                  else if (_banksError != null)
-                    Text(
-                      'Banks could not be loaded (${_banksError!.replaceAll('_', ' ')}).',
-                      style: const TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
-                    )
-                  else if (_banks.isEmpty)
-                    const Text(
-                      'Enable Banking is configured, but this sandbox did not return Santander or Revolut. Add a Mock ASPSP in the Enable Banking control panel, then refresh. Real banks need a Production application.',
-                      style: TextStyle(fontSize: 12, height: 1.5, color: WorthlyColors.muted),
-                    )
-                  else
-                    const Text(
-                      'All supported providers are already connected.',
-                      style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
                     ),
-                  if (unused.isNotEmpty || !hasTrading212) ...[
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Banks open in the system browser for Open Banking. Trading 212 uses a read-only API key — Worthly never sees your login password.',
-                      style: TextStyle(fontSize: 12, color: WorthlyColors.muted),
+                    if (_authError != null) ...[
+                      const SizedBox(height: 10),
+                      Text(_authError!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 12, height: 1.5)),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (!hasTrading212) ...[
+              WorthlyCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CONNECT A BROKERAGE', style: labelStyle()),
+                    const SizedBox(height: 14),
+                    FilledButton(
+                      onPressed: () => setState(() {
+                        _t212Error = null;
+                        _t212Open = true;
+                      }),
+                      style: FilledButton.styleFrom(backgroundColor: WorthlyColors.pine),
+                      child: const Text('Connect Trading 212'),
                     ),
                   ],
-                  if (_authError != null) ...[
-                    const SizedBox(height: 10),
-                    Text(_authError!, style: const TextStyle(color: WorthlyColors.loss, fontSize: 12, height: 1.5)),
-                  ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            WorthlyCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('SYNCHRONIZATION LOG', style: labelStyle()),
-                  if (_log.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 12),
-                      child: Text('No sync runs yet.', style: TextStyle(color: WorthlyColors.muted)),
-                    )
-                  else
-                    for (final row in _log)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(row.provider, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12.5)),
-                                  Text(_detail(row.run), style: const TextStyle(fontSize: 12, color: Color(0xFF5E6A67))),
-                                ],
-                              ),
-                            ),
-                            Text(row.run.status, style: mono(size: 9.5, color: _outcome(row.run.status))),
-                          ],
-                        ),
-                      ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Disconnecting stops future sync. Purging deletes locally stored provider data for that connection. Your own categories, notes and transfer matches are kept.',
-              style: TextStyle(fontSize: 11, height: 1.55, color: WorthlyColors.faint),
-            ),
+              const SizedBox(height: 12),
+            ],
           ],
         ),
         if (_t212Open)
@@ -389,26 +309,6 @@ class _ConnectionsScreenState extends ConsumerState<ConnectionsScreen> {
           ),
       ],
     );
-  }
-
-  String _detail(SyncRun run) {
-    if (run.errorCode != null) {
-      return run.errorCode!.replaceAll('_', ' ');
-    }
-    return '${run.importedCount ?? 0} imported · ${run.updatedCount ?? 0} updated';
-  }
-
-  Color _outcome(String status) {
-    switch (status) {
-      case 'SUCCEEDED':
-        return WorthlyColors.gain;
-      case 'FAILED':
-        return WorthlyColors.loss;
-      case 'RATE_LIMITED':
-        return WorthlyColors.faint;
-      default:
-        return WorthlyColors.warn;
-    }
   }
 }
 
@@ -465,7 +365,6 @@ class _ConnectionCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(connection.label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    Text(bank ? 'Enable Banking · AIS' : 'Public API · read-only key', style: const TextStyle(fontSize: 11, color: WorthlyColors.faint)),
                   ],
                 ),
               ),
@@ -732,13 +631,6 @@ class _ConfirmDialog extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LogRow {
-  const _LogRow({required this.run, required this.provider});
-
-  final SyncRun run;
-  final String provider;
 }
 
 class _Trading212Fields extends StatefulWidget {

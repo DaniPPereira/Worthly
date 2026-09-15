@@ -21,6 +21,7 @@ class OpenApiContractTest {
         assertThat(info.get("version")).isEqualTo("4.5.0");
         Map<String, Object> paths = (Map<String, Object>) root.get("paths");
         assertThat(paths).containsKeys(
+                "/auth/login",
                 "/me",
                 "/me/logout",
                 "/me/totp",

@@ -57,6 +57,9 @@ class Connection {
     this.lastSuccessfulSyncAt,
     this.consentExpiresAt,
     this.lastErrorCode,
+    this.kind,
+    this.holdingsIncluded,
+    this.capabilities = const [],
   });
 
   final String id;
@@ -67,8 +70,28 @@ class Connection {
   final String? lastSuccessfulSyncAt;
   final String? consentExpiresAt;
   final String? lastErrorCode;
+  final String? kind;
+  final bool? holdingsIncluded;
+  final List<String> capabilities;
 
   String get label => provider == 'TRADING_212' ? 'Trading 212' : (institutionName ?? provider);
+
+  bool get isBank => kind == 'BANK' || (kind == null && provider == 'ENABLE_BANKING');
+
+  bool get isBroker => kind == 'BROKER' || provider == 'TRADING_212';
+
+  bool get includesHoldings {
+    if (status == 'DISABLED') {
+      return false;
+    }
+    if (holdingsIncluded == true) {
+      return true;
+    }
+    if (capabilities.contains('POSITIONS')) {
+      return true;
+    }
+    return provider == 'TRADING_212';
+  }
 
   factory Connection.fromJson(Map<String, dynamic> json) {
     return Connection(
@@ -80,6 +103,9 @@ class Connection {
       lastSuccessfulSyncAt: json['lastSuccessfulSyncAt'] as String?,
       consentExpiresAt: json['consentExpiresAt'] as String?,
       lastErrorCode: json['lastErrorCode'] as String?,
+      kind: json['kind'] as String?,
+      holdingsIncluded: json['holdingsIncluded'] as bool?,
+      capabilities: ((json['capabilities'] as List?) ?? const []).cast<String>(),
     );
   }
 }
